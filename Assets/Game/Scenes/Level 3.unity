@@ -175,6 +175,12 @@ PrefabInstance:
     serializedVersion: 3
     m_TransformParent: {fileID: 0}
     m_Modifications:
+    - target: {fileID: 4293349580306153410, guid: 54e157492bc1847d5aed63927d37b536, type: 3}
+      propertyPath: _explanation
+      value: "If (IsGrounded(Player)) and when axis horizontal is held (this can
+        only happen every 0.2 seconds):\n          plays sound step at volume 0.6
+        and a pitch in the range [0.4,0.7]\n"
+      objectReference: {fileID: 0}
     - target: {fileID: 7654576803386949121, guid: 54e157492bc1847d5aed63927d37b536, type: 3}
       propertyPath: m_LocalPosition.x
       value: 0
@@ -283,6 +289,10 @@ PrefabInstance:
     - target: {fileID: 8988164318199248913, guid: 54e157492bc1847d5aed63927d37b536, type: 3}
       propertyPath: m_Name
       value: Player
+      objectReference: {fileID: 0}
+    - target: {fileID: 8988164318199248913, guid: 54e157492bc1847d5aed63927d37b536, type: 3}
+      propertyPath: m_IsActive
+      value: 0
       objectReference: {fileID: 0}
     m_RemovedComponents: []
     m_RemovedGameObjects: []
@@ -460,6 +470,293 @@ Tilemap:
     e31: 0
     e32: 0
     e33: 1
+--- !u!1001 &735306320
+PrefabInstance:
+  m_ObjectHideFlags: 0
+  serializedVersion: 2
+  m_Modification:
+    serializedVersion: 3
+    m_TransformParent: {fileID: 0}
+    m_Modifications:
+    - target: {fileID: 364554105654125487, guid: 54e157492bc1847d5aed63927d37b536, type: 3}
+      propertyPath: _explanation
+      value: Sets the current velocity of Player (1) to a speed of 0 units/sec, in
+        the current direction.
+      objectReference: {fileID: 0}
+    - target: {fileID: 422128524584384484, guid: 54e157492bc1847d5aed63927d37b536, type: 3}
+      propertyPath: m_GravityScale
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 716868327495819274, guid: 54e157492bc1847d5aed63927d37b536, type: 3}
+      propertyPath: _explanation
+      value: "If (IsGrounded([UNDEFINED])) and when button jump is pressed:\n         
+        plays sound jump at volume 1 and at pitch 1\n"
+      objectReference: {fileID: 0}
+    - target: {fileID: 716868327495819274, guid: 54e157492bc1847d5aed63927d37b536, type: 3}
+      propertyPath: preConditions.Array.data[0].movementPlatformer
+      value: 
+      objectReference: {fileID: 0}
+    - target: {fileID: 927491107514523717, guid: 54e157492bc1847d5aed63927d37b536, type: 3}
+      propertyPath: _explanation
+      value: "Reset Level\n----------------\nWhen a collision with a trigger with
+        tags [Enemy] starts:\n          Sets the current velocity of Player (1) to
+        a speed of 0 units/sec, in the current direction.\n          disables component
+        [Undefined]\n          sets animation parameter IsDead of object Player (1)
+        to True\n          plays sound dead at volume 1 and at pitch 1\n then, at
+        1.5 seconds, \n          switches to scene Level 1\n"
+      objectReference: {fileID: 0}
+    - target: {fileID: 1015732714913503672, guid: 54e157492bc1847d5aed63927d37b536, type: 3}
+      propertyPath: _explanation
+      value: "Trail Render Enable Disable\n----------------\nWhen key T is pressed:\n         
+        toggles Player (1)'s trail renderer emission\n"
+      objectReference: {fileID: 0}
+    - target: {fileID: 2784165577590821552, guid: 54e157492bc1847d5aed63927d37b536, type: 3}
+      propertyPath: m_Enabled
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 4051256606398178243, guid: 54e157492bc1847d5aed63927d37b536, type: 3}
+      propertyPath: _explanation
+      value: Toggles Player (1)'s trail renderer emission
+      objectReference: {fileID: 0}
+    - target: {fileID: 4293349580306153410, guid: 54e157492bc1847d5aed63927d37b536, type: 3}
+      propertyPath: _explanation
+      value: "If (IsGrounded([UNDEFINED])) and when axis horizontal is held (this
+        can only happen every 0.2 seconds):\n          plays sound step at volume
+        0.6 and a pitch in the range [0.4,0.7]\n"
+      objectReference: {fileID: 0}
+    - target: {fileID: 4293349580306153410, guid: 54e157492bc1847d5aed63927d37b536, type: 3}
+      propertyPath: preConditions.Array.data[0].movementPlatformer
+      value: 
+      objectReference: {fileID: 0}
+    - target: {fileID: 6650384153347907064, guid: 54e157492bc1847d5aed63927d37b536, type: 3}
+      propertyPath: target
+      value: 
+      objectReference: {fileID: 0}
+    - target: {fileID: 6650384153347907064, guid: 54e157492bc1847d5aed63927d37b536, type: 3}
+      propertyPath: _explanation
+      value: 'Disables component [Undefined]'
+      objectReference: {fileID: 0}
+    - target: {fileID: 6986011483222948518, guid: 54e157492bc1847d5aed63927d37b536, type: 3}
+      propertyPath: _explanation
+      value: Sets animation parameter IsDead of object Player (1) to True
+      objectReference: {fileID: 0}
+    - target: {fileID: 7654576803386949121, guid: 54e157492bc1847d5aed63927d37b536, type: 3}
+      propertyPath: m_LocalPosition.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 7654576803386949121, guid: 54e157492bc1847d5aed63927d37b536, type: 3}
+      propertyPath: m_LocalPosition.y
+      value: 92
+      objectReference: {fileID: 0}
+    - target: {fileID: 7654576803386949121, guid: 54e157492bc1847d5aed63927d37b536, type: 3}
+      propertyPath: m_LocalPosition.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 7654576803386949121, guid: 54e157492bc1847d5aed63927d37b536, type: 3}
+      propertyPath: m_LocalRotation.w
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 7654576803386949121, guid: 54e157492bc1847d5aed63927d37b536, type: 3}
+      propertyPath: m_LocalRotation.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 7654576803386949121, guid: 54e157492bc1847d5aed63927d37b536, type: 3}
+      propertyPath: m_LocalRotation.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 7654576803386949121, guid: 54e157492bc1847d5aed63927d37b536, type: 3}
+      propertyPath: m_LocalRotation.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 7654576803386949121, guid: 54e157492bc1847d5aed63927d37b536, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 7654576803386949121, guid: 54e157492bc1847d5aed63927d37b536, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 7654576803386949121, guid: 54e157492bc1847d5aed63927d37b536, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 8822780962202990349, guid: 54e157492bc1847d5aed63927d37b536, type: 3}
+      propertyPath: speed.y
+      value: 100
+      objectReference: {fileID: 0}
+    - target: {fileID: 8822780962202990349, guid: 54e157492bc1847d5aed63927d37b536, type: 3}
+      propertyPath: _explanation
+      value: 'Platformer controller
+
+        ----------------
+
+        Platformer
+        movement; horizontal speed is 125 units per second.
+
+        Horizontal movement
+        will be controlled by the [Horizontal] axis.
+
+        Ground check is going
+        to use collider GroundCheck, the ground layer mask defines what is considered
+        solid ground.
+
+        When there''s no solid ground below character, the
+        character will start falling after 0.1s, with a gravity scale of 1.5.
+
+        The
+        character''s trajectory can be modified mid-air.
+
+        When in the air,
+        the character''s collider will be Player (1)(Player (1) (UnityEngine.BoxCollider2D)),
+        and on the ground will be Player (1)(Player (1) (UnityEngine.CapsuleCollider2D)).
+
+        The
+        character will jump by holding the [Jump] button.
+
+        The vertical velocity
+        will be 100 units/second while jump is pressed, during a maximum of 0.2 seconds.
+
+        Jump
+        height will be between 4 to 24 units (from 0.09 to 0.29 seconds to top of
+        trajectory).
+
+        This controller also controls some visuals:
+
+        When
+        the player intent is to go left, the horizontal scale of this object will
+        be inverted.
+
+        Some values will be set on animator Player (1):
+
+        Horizontal
+        velocity will be set to parameter VelocityX.
+
+        Absolute horizontal
+        velocity will be set to parameter AbsVelocityX.
+
+        Vertical velocity
+        will be set to parameter VelocityY.
+
+        Absolute vertical velocity will
+        be set to parameter AbsVelocityY.
+
+        Grounded state will be set to
+        parameter IsGrounded.
+
+'
+      objectReference: {fileID: 0}
+    - target: {fileID: 8988164318199248913, guid: 54e157492bc1847d5aed63927d37b536, type: 3}
+      propertyPath: m_Name
+      value: Player (1)
+      objectReference: {fileID: 0}
+    - target: {fileID: 9174579720144940379, guid: 54e157492bc1847d5aed63927d37b536, type: 3}
+      propertyPath: m_Enabled
+      value: 1
+      objectReference: {fileID: 0}
+    m_RemovedComponents:
+    - {fileID: 8822780962202990349, guid: 54e157492bc1847d5aed63927d37b536, type: 3}
+    - {fileID: 4293349580306153410, guid: 54e157492bc1847d5aed63927d37b536, type: 3}
+    - {fileID: 5579418092482842763, guid: 54e157492bc1847d5aed63927d37b536, type: 3}
+    - {fileID: 716868327495819274, guid: 54e157492bc1847d5aed63927d37b536, type: 3}
+    - {fileID: 5018350370408917105, guid: 54e157492bc1847d5aed63927d37b536, type: 3}
+    - {fileID: 1015732714913503672, guid: 54e157492bc1847d5aed63927d37b536, type: 3}
+    - {fileID: 4051256606398178243, guid: 54e157492bc1847d5aed63927d37b536, type: 3}
+    - {fileID: 927491107514523717, guid: 54e157492bc1847d5aed63927d37b536, type: 3}
+    - {fileID: 364554105654125487, guid: 54e157492bc1847d5aed63927d37b536, type: 3}
+    - {fileID: 6650384153347907064, guid: 54e157492bc1847d5aed63927d37b536, type: 3}
+    - {fileID: 6986011483222948518, guid: 54e157492bc1847d5aed63927d37b536, type: 3}
+    - {fileID: 201971875372721956, guid: 54e157492bc1847d5aed63927d37b536, type: 3}
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents:
+    - targetCorrespondingSourceObject: {fileID: 8988164318199248913, guid: 54e157492bc1847d5aed63927d37b536, type: 3}
+      insertIndex: 7
+      addedObject: {fileID: 735306326}
+    - targetCorrespondingSourceObject: {fileID: 8988164318199248913, guid: 54e157492bc1847d5aed63927d37b536, type: 3}
+      insertIndex: 8
+      addedObject: {fileID: 735306325}
+    - targetCorrespondingSourceObject: {fileID: 8988164318199248913, guid: 54e157492bc1847d5aed63927d37b536, type: 3}
+      insertIndex: 9
+      addedObject: {fileID: 735306323}
+  m_SourcePrefab: {fileID: 100100000, guid: 54e157492bc1847d5aed63927d37b536, type: 3}
+--- !u!1 &735306321 stripped
+GameObject:
+  m_CorrespondingSourceObject: {fileID: 8988164318199248913, guid: 54e157492bc1847d5aed63927d37b536, type: 3}
+  m_PrefabInstance: {fileID: 735306320}
+  m_PrefabAsset: {fileID: 0}
+--- !u!4 &735306322 stripped
+Transform:
+  m_CorrespondingSourceObject: {fileID: 1377973852429035859, guid: 54e157492bc1847d5aed63927d37b536, type: 3}
+  m_PrefabInstance: {fileID: 735306320}
+  m_PrefabAsset: {fileID: 0}
+--- !u!114 &735306323
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 735306321}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 12a7577f4b7a50d4ea4caa29137c2200, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::LedgeDetector
+  geometryLayers:
+    serializedVersion: 2
+    m_Bits: 64
+  rayLength: 5
+  wallRayHeight: 2.5
+  ledgeRayHeight: 12.5
+  ledgeSurfaceDropOffset: 2
+  climbTargetOffset: -2
+--- !u!114 &735306325
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 735306321}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: a0abdad8ae4e55e4d8fb85b4b1410d78, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::PlayerInputHandler
+--- !u!114 &735306326
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 735306321}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 80a459f6e7dead44fa8321ad9a2a6f35, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::PlayerController
+  walkSpeed: 125
+  sprintMultiplier: 1.65
+  acceleration: 1200
+  deceleration: 1600
+  jumpForce: 200
+  fallGravityMultiplier: 2.5
+  lowJumpMultiplier: 2
+  coyoteTime: 0.12
+  jumpBufferTime: 0.15
+  maxJumps: 1
+  groundCheck: {fileID: 735306322}
+  groundCheckRadius: 0.15
+  groundLayers:
+    serializedVersion: 2
+    m_Bits: 64
+  climbDuration: 0.25
+  hangpointHorizontalOffset: 3
+  hangpointVerticalOffset: 3
+  stamina:
+    maxStamina: 100
+    drainRate: 20
+    regenRate: 15
+    regenDelay: 0.5
+    sprintMinThreshold: 10
 --- !u!1 &784092445
 GameObject:
   m_ObjectHideFlags: 0
@@ -134250,3 +134547,4 @@ SceneRoots:
   - {fileID: 219993139}
   - {fileID: 2848353920422132228}
   - {fileID: 305392682}
+  - {fileID: 735306320}
