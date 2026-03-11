@@ -409,8 +409,8 @@ public class PlayerController : MonoBehaviour
     private static readonly int AnimSpeed     = Animator.StringToHash("AbsVelocityX");
     private static readonly int AnimGrounded  = Animator.StringToHash("IsGrounded");
     private static readonly int AnimVelY      = Animator.StringToHash("VelocityY");
-    //private static readonly int AnimLedge     = Animator.StringToHash("LedgeHang");
-    //private static readonly int AnimClimb     = Animator.StringToHash("LedgeClimb");
+    private static readonly int AnimLedge     = Animator.StringToHash("LedgeHang");
+    private static readonly int AnimClimb     = Animator.StringToHash("LedgeClimb");
     //private static readonly int AnimSprint    = Animator.StringToHash("Sprinting");
 
     private void UpdateAnimator()
@@ -420,8 +420,8 @@ public class PlayerController : MonoBehaviour
         _animator.SetFloat(AnimSpeed,    Mathf.Abs(_rb.linearVelocityX));
         _animator.SetFloat(AnimVelY,     _rb.linearVelocityY);
         _animator.SetBool(AnimGrounded,  _isGrounded);
-        //_animator.SetBool(AnimLedge,     _state == MoveState.LedgeHang);
-        //_animator.SetBool(AnimClimb,     _state == MoveState.LedgeClimb);
+        _animator.SetBool(AnimLedge,     _state == MoveState.LedgeHang);
+        _animator.SetBool(AnimClimb,     _state == MoveState.LedgeClimb);
         //_animator.SetBool(AnimSprint,    _input.SprintHeld && !stamina.IsExhausted);
     }
 
