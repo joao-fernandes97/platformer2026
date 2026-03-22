@@ -96,10 +96,11 @@ public class PlayerController : MonoBehaviour
     // COMPONENTS
     // ════════════════════════════════════════════════════════
 
-    private Rigidbody2D      _rb;
-    private PlayerInputHandler _input;
-    private LedgeDetector    _ledgeDetector;
-    private Animator         _animator;   // optional
+    private Rigidbody2D         _rb;
+    private PlayerInputHandler  _input;
+    private LedgeDetector       _ledgeDetector;
+    private Animator            _animator;   // optional
+    private HealthComponent     _health;
 
     // ════════════════════════════════════════════════════════
     // RUNTIME STATE
@@ -131,7 +132,37 @@ public class PlayerController : MonoBehaviour
         _animator      = GetComponent<Animator>();   // null is fine
 
         _rb.freezeRotation = true;
-        stamina.Initialise();
+        stamina.Initialize();
+
+        _health = GetComponent<HealthComponent>();
+        _health.OnDied += OnDied;
+    }
+
+    private void Start()
+    {
+        // Start is guaranteed to run after ALL Awake calls in the scene,
+        // so PlayerRegistry.Instance is always valid here — even when both
+        // players and the registry initialise in the same frame.
+        PlayerRegistry.Instance?.Register(this);
+    }
+
+    private void OnEnable()
+    {
+        // Handles runtime re-enables (e.g. respawn after death).
+        // At that point the registry is already initialised, so Instance
+        // is never null. The Contains check inside Register prevents duplicates
+        // if OnEnable fires before Start on first boot.
+        PlayerRegistry.Instance?.Register(this);
+    }
+    
+    private void OnDisable()
+    {
+        PlayerRegistry.Instance?.Deregister(this);
+    }
+
+    private void OnDestroy()
+    {
+        _health.OnDied -= OnDied;
     }
 
     private void Update()
@@ -402,6 +433,19 @@ public class PlayerController : MonoBehaviour
     }
 
     // ════════════════════════════════════════════════════════
+    // DEATH
+    // ════════════════════════════════════════════════════════
+    
+    private void OnDied()
+    {
+        if(_animator != null)
+            _animator.SetTrigger(AnimIsDead);
+
+        _rb.linearVelocity = Vector2.zero;
+        enabled = false;
+    }
+    
+    // ════════════════════════════════════════════════════════
     // ANIMATOR BRIDGE  (optional — safe if no Animator attached)
     // Update with LedgeGrabbing, CLimbing animations later
     // ════════════════════════════════════════════════════════
@@ -411,6 +455,7 @@ public class PlayerController : MonoBehaviour
     private static readonly int AnimVelY      = Animator.StringToHash("VelocityY");
     private static readonly int AnimLedge     = Animator.StringToHash("LedgeHang");
     private static readonly int AnimClimb     = Animator.StringToHash("LedgeClimb");
+    private static readonly int AnimIsDead    = Animator.StringToHash("IsDead");
     //private static readonly int AnimSprint    = Animator.StringToHash("Sprinting");
 
     private void UpdateAnimator()
@@ -429,8 +474,9 @@ public class PlayerController : MonoBehaviour
     // PUBLIC ACCESSORS  (for UI, abilities, external systems)
     // ════════════════════════════════════════════════════════
 
-    public float StaminaNormalised => stamina.Normalised;
+    public float StaminaNormalized => stamina.Normalized;
     public bool  IsGrounded        => _isGrounded;
     public bool  IsLedgeHanging    => _state == MoveState.LedgeHang;
     public MoveState CurrentState  => _state;
+    public float FacingSign        => _facingSign;
 }

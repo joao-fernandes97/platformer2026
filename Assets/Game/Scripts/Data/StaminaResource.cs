@@ -2,7 +2,7 @@ using UnityEngine;
 
 /// <summary>
 /// Pure stamina resource. No MonoBehaviour — owned and ticked by PlayerController.
-/// Keeping it as a plain class makes it trivially serialisable for network sync later:
+/// Keeping it as a plain class makes it trivially serializable for network sync later:
 /// NGO: just put currentStamina in a NetworkVariable<float>.
 /// </summary>
 [System.Serializable]
@@ -26,13 +26,13 @@ public class StaminaResource
 
     // ── Runtime State ────────────────────────────────────────────────────────
     public float Current        { get; private set; }
-    public float Normalised     => Current / maxStamina;
+    public float Normalized     => Current / maxStamina;
     public bool  IsExhausted    { get; private set; }
 
     private float _regenDelayTimer;
 
     // ── Init ─────────────────────────────────────────────────────────────────
-    public void Initialise() => Current = maxStamina;
+    public void Initialize() => Current = maxStamina;
 
     // ── Tick (call every frame from PlayerController) ────────────────────────
     /// <param name="wantsSprint">True when player holds sprint AND is moving.</param>

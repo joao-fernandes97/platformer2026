@@ -1,60 +1,64 @@
 using UnityEngine;
 using UnityEngine.InputSystem;
 
+[RequireComponent(typeof(PlayerInput))]
 public class PlayerInputHandler : MonoBehaviour
 {
-    // ── Exposed Input State (read by PlayerController) ──────────────────────
-    public Vector2 MoveInput       { get; private set; }
-    public bool    JumpPressed     { get; private set; }   // true for one frame
-    public bool    JumpHeld        { get; private set; }   // true while held
-    public bool    SprintHeld      { get; private set; }
-    public bool    ClimbPressed    { get; private set; }   // ledge climb confirm
+    public Vector2 MoveInput    { get; private set; }
+    public bool    JumpPressed  { get; private set; }
+    public bool    JumpHeld     { get; private set; }
+    public bool    SprintHeld   { get; private set; }
+    public bool    ClimbPressed { get; private set; }
 
-    // ── Internal ─────────────────────────────────────────────────────────────
-    private PlayerInputActions _actions;   // generated C# class from Input Action Asset
+    private InputAction _moveAction;
+    private InputAction _jumpAction;
+    private InputAction _sprintAction;
+    private InputAction _climbAction;
 
-    // ── Lifecycle ────────────────────────────────────────────────────────────
-    private void Awake()
+    private void Start()
     {
-        _actions = new PlayerInputActions();
+        var playerInput = GetComponent<PlayerInput>();
+
+        // Explicitly pair the keyboard to this PlayerInput using whichever
+        // Default Scheme you set in the Inspector ("WASD" or "Arrows").
+        // This is what populates the devices list and activates the binding mask.
+        playerInput.SwitchCurrentControlScheme(
+            playerInput.defaultControlScheme,
+            Keyboard.current
+        );
+
+        _moveAction   = playerInput.actions["Move"];
+        _jumpAction   = playerInput.actions["Jump"];
+        _sprintAction = playerInput.actions["Sprint"];
+        _climbAction  = playerInput.actions["Climb"];
+
+        _jumpAction.performed  += OnJumpPerformed;
+        _jumpAction.canceled   += OnJumpCanceled;
+        _climbAction.performed += OnClimbPerformed;
     }
 
-    private void OnEnable()
+    private void OnDestroy()
     {
-        _actions.Player.Enable();
-
-        _actions.Player.Jump.performed  += OnJumpPerformed;
-        _actions.Player.Jump.canceled   += OnJumpCanceled;
-        _actions.Player.Climb.performed += OnClimbPerformed;
+        if (_jumpAction == null) return;
+        _jumpAction.performed  -= OnJumpPerformed;
+        _jumpAction.canceled   -= OnJumpCanceled;
+        _climbAction.performed -= OnClimbPerformed;
     }
 
-    private void OnDisable()
-    {
-        _actions.Player.Jump.performed  -= OnJumpPerformed;
-        _actions.Player.Jump.canceled   -= OnJumpCanceled;
-        _actions.Player.Climb.performed -= OnClimbPerformed;
-
-        _actions.Player.Disable();
-    }
-
-    // ── Update ───────────────────────────────────────────────────────────────
     private void Update()
     {
-        MoveInput   = _actions.Player.Move.ReadValue<Vector2>();
-        SprintHeld  = _actions.Player.Sprint.IsPressed();
-        JumpHeld    = _actions.Player.Jump.IsPressed();
+        if (_moveAction == null) return;
+        MoveInput  = _moveAction.ReadValue<Vector2>();
+        SprintHeld = _sprintAction.IsPressed();
+        JumpHeld   = _jumpAction.IsPressed();
     }
 
-    /// <summary>
-    /// Call at the END of PlayerController.Update to clear one-frame flags.
-    /// </summary>
     public void ConsumeFrameInputs()
     {
         JumpPressed  = false;
         ClimbPressed = false;
     }
 
-    // ── Callbacks ────────────────────────────────────────────────────────────
     private void OnJumpPerformed(InputAction.CallbackContext _)  => JumpPressed  = true;
     private void OnJumpCanceled(InputAction.CallbackContext _)   => JumpHeld     = false;
     private void OnClimbPerformed(InputAction.CallbackContext _) => ClimbPressed = true;
