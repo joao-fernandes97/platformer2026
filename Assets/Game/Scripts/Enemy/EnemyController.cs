@@ -46,6 +46,7 @@ using UnityEngine;
 /// </summary>
 [RequireComponent(typeof(Rigidbody2D))]
 [RequireComponent(typeof(HealthComponent))]
+[RequireComponent(typeof(ContactDamage))]
 public class EnemyController : MonoBehaviour
 {
     // ════════════════════════════════════════════════════════
@@ -70,11 +71,6 @@ public class EnemyController : MonoBehaviour
     [Header("Investigate")]
     [Tooltip("How long the enemy keeps moving in the last known direction before giving up.")]
     public float investigateDuration = 5f;
-
-    [Header("Contact Damage")]
-    public float contactDamage  = 10f;
-    [Tooltip("Minimum seconds between damage ticks on the same player.")]
-    public float damageCooldown = 0.8f;
 
     [Header("Death")]
     [Tooltip("Seconds before the GameObject is destroyed after dying.")]
@@ -133,7 +129,6 @@ public class EnemyController : MonoBehaviour
         if (_health.IsDead) return;
 
         UpdateTarget();
-        UpdateDamageCooldown();
 
         switch (_state)
         {
@@ -282,30 +277,6 @@ public class EnemyController : MonoBehaviour
 
         _rb.linearVelocity   = new Vector2(newVelX, _rb.linearVelocityY);
         transform.localScale = new Vector3(_facingSign, 1f, 1f);
-    }
-
-    // ════════════════════════════════════════════════════════
-    // CONTACT DAMAGE
-    // ════════════════════════════════════════════════════════
-
-    private void UpdateDamageCooldown()
-    {
-        if (_damageCooldownTimer > 0f)
-            _damageCooldownTimer -= Time.fixedDeltaTime;
-    }
-
-    private void OnCollisionStay2D(Collision2D col)
-    {
-        if (_health.IsDead)            return;
-        if (_damageCooldownTimer > 0f) return;
-
-        if (col.gameObject.GetComponent<PlayerController>() == null) return;
-
-        HealthComponent targetHealth = col.gameObject.GetComponent<HealthComponent>();
-        if (targetHealth == null) return;
-
-        targetHealth.TakeDamage(contactDamage);
-        _damageCooldownTimer = damageCooldown;
     }
 
     // ════════════════════════════════════════════════════════

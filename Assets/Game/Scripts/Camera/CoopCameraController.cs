@@ -258,10 +258,15 @@ public class CoopCameraController : MonoBehaviour
         }
         else if (count == 0)
         {
-            // No players — hold position
+            // No players — ensure split state is cleared
+            _wantSplit            = false;
+            _splitCooldownTimer   = 0f;
         }
         else if (count == 1)
         {
+            // A player has died — force the blend back to shared mode
+            _wantSplit            = false;
+            _splitCooldownTimer   = 0f;
             FollowSingle(players[0].transform.position);
         }
         else

@@ -37,7 +37,12 @@ public class PlatformMover : MonoBehaviour
     [Header("Movement")]
     public LoopMode loopMode  = LoopMode.PingPong;
     public float    moveSpeed = 3f;
+    [Tooltip("Optional per-segment speed override. Index N = speed when moving TOWARD waypoint N. " +
+         "Leave empty to use moveSpeed for all segments. Indices with no entry fall back to moveSpeed.")]
+    public float[] segmentSpeeds;
 
+    [Tooltip("Seconds to wait on start before the platform begins moving.")]
+    public float initialDelay = 0f;
     [Tooltip("Seconds to wait at each waypoint before moving on.")]
     public float waypointPause = 0f;
 
@@ -57,6 +62,7 @@ public class PlatformMover : MonoBehaviour
     private int       _currentIndex  = 0;
     private int       _direction     = 1;    // +1 forward, -1 reverse (PingPong)
     private float     _pauseTimer    = 0f;
+    private bool      _initialDelayDone = false;
     private bool      _stopped       = false;
 
     // Passenger tracking
@@ -79,6 +85,14 @@ public class PlatformMover : MonoBehaviour
     {
         if (_stopped || waypoints.Length < 2) return;
 
+        if (!_initialDelayDone)
+        {
+            initialDelay -= Time.fixedDeltaTime;
+            if (initialDelay <= 0f)
+                _initialDelayDone = true;
+            return;
+        }
+
         if (_pauseTimer > 0f)
         {
             _pauseTimer -= Time.fixedDeltaTime;
@@ -88,11 +102,12 @@ public class PlatformMover : MonoBehaviour
         Vector2 target   = _worldWaypoints[_currentIndex];
         Vector2 current  = transform.position;
         float   distance = Vector2.Distance(current, target);
-        float   step     = moveSpeed * Time.fixedDeltaTime;
+        float   speed    = GetCurrentSpeed(_currentIndex);
+        float   step     = speed * Time.fixedDeltaTime;
 
         // Ease in to waypoint
-        if (easing > 0f && distance < moveSpeed)
-            step *= Mathf.Lerp(1f, distance / moveSpeed, easing);
+        if (easing > 0f && distance < speed)
+            step *= Mathf.Lerp(1f, distance / speed, easing);
 
         Vector2 nextPos;
 
@@ -189,13 +204,29 @@ public class PlatformMover : MonoBehaviour
     public void SetPaused(bool paused) => _stopped = paused;
     public void ResetToStart()
     {
-        _currentIndex     = 0;
-        _direction        = 1;
-        _stopped          = false;
+        _currentIndex      = 0;
+        _direction         = 1;
+        _stopped           = false;
+        _initialDelayDone  = false;
         transform.position = new Vector3(
             _worldWaypoints[0].x, _worldWaypoints[0].y, transform.position.z);
     }
 
+    // ════════════════════════════════════════════════════════
+    // HELPERS
+    // ════════════════════════════════════════════════════════
+
+    /// <summary>
+    /// Returns the speed to use when travelling toward <paramref name="targetIndex"/>.
+    /// Falls back to the global moveSpeed if no override is defined for that index.
+    /// </summary>
+    private float GetCurrentSpeed(int targetIndex)
+    {
+        if (segmentSpeeds != null && targetIndex < segmentSpeeds.Length && segmentSpeeds[targetIndex] > 0f)
+            return segmentSpeeds[targetIndex];
+        return moveSpeed;
+    }
+    
     // ════════════════════════════════════════════════════════
     // GIZMOS
     // ════════════════════════════════════════════════════════

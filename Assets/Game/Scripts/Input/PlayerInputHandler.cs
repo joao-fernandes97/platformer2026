@@ -9,11 +9,13 @@ public class PlayerInputHandler : MonoBehaviour
     public bool    JumpHeld     { get; private set; }
     public bool    SprintHeld   { get; private set; }
     public bool    ClimbPressed { get; private set; }
+    public bool    InteractPressed { get; private set; }
 
     private InputAction _moveAction;
     private InputAction _jumpAction;
     private InputAction _sprintAction;
     private InputAction _climbAction;
+    private InputAction _interactAction;
 
     private void Start()
     {
@@ -31,10 +33,12 @@ public class PlayerInputHandler : MonoBehaviour
         _jumpAction   = playerInput.actions["Jump"];
         _sprintAction = playerInput.actions["Sprint"];
         _climbAction  = playerInput.actions["Climb"];
+        _interactAction = playerInput.actions["Interact"];
 
         _jumpAction.performed  += OnJumpPerformed;
         _jumpAction.canceled   += OnJumpCanceled;
         _climbAction.performed += OnClimbPerformed;
+        _interactAction.performed += OnInteractPerformed;
     }
 
     private void OnDestroy()
@@ -43,6 +47,7 @@ public class PlayerInputHandler : MonoBehaviour
         _jumpAction.performed  -= OnJumpPerformed;
         _jumpAction.canceled   -= OnJumpCanceled;
         _climbAction.performed -= OnClimbPerformed;
+        _interactAction.performed -= OnInteractPerformed;
     }
 
     private void Update()
@@ -57,9 +62,11 @@ public class PlayerInputHandler : MonoBehaviour
     {
         JumpPressed  = false;
         ClimbPressed = false;
+        InteractPressed = false;
     }
 
     private void OnJumpPerformed(InputAction.CallbackContext _)  => JumpPressed  = true;
     private void OnJumpCanceled(InputAction.CallbackContext _)   => JumpHeld     = false;
     private void OnClimbPerformed(InputAction.CallbackContext _) => ClimbPressed = true;
+    private void OnInteractPerformed(InputAction.CallbackContext _) => InteractPressed = true;
 }
