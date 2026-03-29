@@ -58,11 +58,15 @@ public class PlayerInputHandler : MonoBehaviour
         JumpHeld   = _jumpAction.IsPressed();
     }
 
+    private void LateUpdate()
+    {
+        InteractPressed = false;
+    }
+
     public void ConsumeFrameInputs()
     {
         JumpPressed  = false;
         ClimbPressed = false;
-        InteractPressed = false;
     }
 
     private void OnJumpPerformed(InputAction.CallbackContext _)  => JumpPressed  = true;

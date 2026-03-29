@@ -81,8 +81,9 @@ public class ActivationButton : MonoBehaviour
 
     public bool IsActivated { get; private set; }
 
-    // All PlayerInputHandlers currently inside the zone.
-    private readonly List<PlayerInputHandler> _inputsInZone = new();
+    // Counts how many colliders belonging to each handler are currently
+    // inside the zone. A handler is "present" while its count > 0.
+    private readonly Dictionary<PlayerInputHandler, int> _collidersInZone = new();
 
     // ════════════════════════════════════════════════════════
     // LIFECYCLE
@@ -104,10 +105,10 @@ public class ActivationButton : MonoBehaviour
     private void Update()
     {
         if (activationMode != ActivationMode.PressToActivate) return;
-        if (_inputsInZone.Count == 0) return;
+        if (_collidersInZone.Count == 0) return;
 
         // Either player's Interact press triggers the button.
-        foreach (var input in _inputsInZone)
+        foreach (var (input, _) in _collidersInZone)
         {
             if (input.InteractPressed)
             {
@@ -122,47 +123,71 @@ public class ActivationButton : MonoBehaviour
     // ════════════════════════════════════════════════════════
 
     private void OnTriggerEnter2D(Collider2D other)
-    {
-        var input = other.GetComponent<PlayerInputHandler>();
+    {       
+        var input = other.GetComponentInParent<PlayerInputHandler>();
         if (input == null) return;
 
-        _inputsInZone.Add(input);
+                // Increment this handler's collider count.
+        _collidersInZone.TryGetValue(input, out int count);
+        _collidersInZone[input] = count + 1;
+ 
+        // Only react on the first collider that enters (i.e. when the
+        // player wasn't in the zone at all before this).
+        if (count == 0)
+            OnPlayerEnteredZone(input);
+    }
 
+    private void OnTriggerExit2D(Collider2D other)
+    {
+        var input = other.GetComponentInParent<PlayerInputHandler>();
+        if (input == null) return;
+
+        if (!_collidersInZone.ContainsKey(input)) return;
+
+        int remaining = _collidersInZone[input] - 1;
+
+                if (remaining <= 0)
+        {
+            // Last collider left — player has truly exited.
+            _collidersInZone.Remove(input);
+            OnPlayerExitedZone();
+        }
+        else
+        {
+            _collidersInZone[input] = remaining;
+        }
+    }
+
+        private void OnPlayerEnteredZone(PlayerInputHandler input)
+    {
         switch (activationMode)
         {
             case ActivationMode.AutoOnEnter:
                 TryActivate();
                 break;
-
+ 
             case ActivationMode.PressurePlate:
-                // Activate when the first player steps on.
-                if (_inputsInZone.Count == 1)   // first player on plate
+                if (_collidersInZone.Count == 1)   // first player
                     SetState(true);
                 break;
-
+ 
             case ActivationMode.PressToActivate:
                 SetPromptVisible(true);
                 break;
         }
     }
-
-    private void OnTriggerExit2D(Collider2D other)
+ 
+    private void OnPlayerExitedZone()
     {
-        var input = other.GetComponent<PlayerInputHandler>();
-        if (input == null) return;
-
-        _inputsInZone.Remove(input);
-
         switch (activationMode)
         {
             case ActivationMode.PressurePlate:
-                // Deactivate once the last player leaves.
-                if (_inputsInZone.Count == 0)
+                if (_collidersInZone.Count == 0)
                     SetState(false);
                 break;
-
+ 
             case ActivationMode.PressToActivate:
-                if (_inputsInZone.Count == 0)
+                if (_collidersInZone.Count == 0)
                     SetPromptVisible(false);
                 break;
         }
