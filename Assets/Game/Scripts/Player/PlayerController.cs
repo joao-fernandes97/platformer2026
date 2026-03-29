@@ -136,6 +136,7 @@ public class PlayerController : MonoBehaviour
 
         _health = GetComponent<HealthComponent>();
         _health.OnDied += OnDied;
+        _health.OnRevived += OnRevived;
     }
 
     private void Start()
@@ -163,6 +164,7 @@ public class PlayerController : MonoBehaviour
     private void OnDestroy()
     {
         _health.OnDied -= OnDied;
+        _health.OnRevived -= OnRevived;
     }
 
     private void Update()
@@ -443,6 +445,38 @@ public class PlayerController : MonoBehaviour
 
         _rb.linearVelocity = Vector2.zero;
         enabled = false;
+    }
+
+    private void OnRevived()
+    {
+        // Reset the Animator back to its default state so the death
+        // pose/hide doesn't persist. Rebind() resets all parameters and
+        // replays the default state from time 0 — safe even with no Animator.
+        if (_animator != null)
+        {
+            _animator.ResetTrigger(AnimIsDead);
+            _animator.Rebind();
+            _animator.Update(0f);
+        }
+
+        // Ensure the sprite is fully opaque in case a fade-out was in progress.
+        if (TryGetComponent<SpriteRenderer>(out var sr))
+        {
+            var c = sr.color;
+            c.a = 1f;
+            sr.color = c;
+        }
+
+        // Reset physics to a clean dynamic state. CheckpointManager positions
+        // the transform before calling pc.enabled = true, so we only need
+        // to clear velocity and restore the body type here.
+        _rb.linearVelocity = Vector2.zero;
+        _rb.bodyType       = RigidbodyType2D.Dynamic;
+        _rb.gravityScale   = 1f;
+
+        // Drop back into Airborne — UpdateGroundState() will settle it to
+        // Grounded on the very next FixedUpdate if the player is on the floor.
+        _state = MoveState.Airborne;
     }
     
     // ════════════════════════════════════════════════════════
