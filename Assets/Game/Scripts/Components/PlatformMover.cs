@@ -1,37 +1,15 @@
+using System.Collections.Generic;
+using Unity.Netcode;
 using UnityEngine;
 
 /// <summary>
 /// Moves a platform (or any GameObject) along a set of waypoints.
-///
-/// Movement styles:
-///   Loop      — reaches the last waypoint then jumps back to the first
-///   PingPong  — reverses direction at each end
-///   Once      — stops at the final waypoint
-///
-/// Waypoints are defined as local offsets from the platform's starting
-/// position, so the whole path moves with the object if you reposition it.
-///
-/// Carries rigidbody-based characters automatically: any Rigidbody2D
-/// sitting on the platform is moved with it by parenting during contact.
-/// This is the simplest reliable approach for 2D; for more complex cases
-/// (wall-riding, ceiling) track contacts manually.
-///
-/// MULTIPLAYER NOTE (NGO server-auth):
-///   1. Inherit NetworkBehaviour.
-///   2. Wrap FixedUpdate with: if (!IsServer) return;
-///   3. Add a NetworkTransform for client interpolation.
-///   4. Passenger parenting is client-side visual only — server drives position.
 /// </summary>
-public class PlatformMover : MonoBehaviour
+public class PlatformMover : NetworkBehaviour
 {
-    // ════════════════════════════════════════════════════════
-    // INSPECTOR CONFIG
-    // ════════════════════════════════════════════════════════
-
     public enum LoopMode { PingPong, Loop, Once }
 
     [Header("Waypoints")]
-    [Tooltip("Positions relative to the platform's starting position.")]
     public Vector2[] waypoints = { Vector2.zero, new Vector2(4f, 0f) };
 
     [Header("Movement")]
@@ -41,9 +19,7 @@ public class PlatformMover : MonoBehaviour
          "Leave empty to use moveSpeed for all segments. Indices with no entry fall back to moveSpeed.")]
     public float[] segmentSpeeds;
 
-    [Tooltip("Seconds to wait on start before the platform begins moving.")]
     public float initialDelay = 0f;
-    [Tooltip("Seconds to wait at each waypoint before moving on.")]
     public float waypointPause = 0f;
 
     [Tooltip("Easing applied when approaching a waypoint (0 = linear, 1 = full ease).")]
@@ -51,12 +27,7 @@ public class PlatformMover : MonoBehaviour
     public float easing = 0.3f;
 
     [Header("Passengers")]
-    [Tooltip("Layer(s) whose Rigidbody2D objects should be carried by this platform.")]
     public LayerMask passengerLayers;
-
-    // ════════════════════════════════════════════════════════
-    // RUNTIME STATE
-    // ════════════════════════════════════════════════════════
 
     private Vector2[] _worldWaypoints;
     private int       _currentIndex  = 0;
@@ -66,12 +37,9 @@ public class PlatformMover : MonoBehaviour
     private bool      _stopped       = false;
 
     // Passenger tracking
-    private Transform _passenger;
-    private Vector3   _passengerPrevParent;
+    private List<PlayerController> _passengerList = new();
 
-    // ════════════════════════════════════════════════════════
-    // LIFECYCLE
-    // ════════════════════════════════════════════════════════
+#region Lifecycle
 
     private void Start()
     {
@@ -83,6 +51,8 @@ public class PlatformMover : MonoBehaviour
 
     private void FixedUpdate()
     {
+        if(!IsServer) return;
+
         if (_stopped || waypoints.Length < 2) return;
 
         if (!_initialDelayDone)
@@ -123,14 +93,18 @@ public class PlatformMover : MonoBehaviour
         }
 
         Vector2 delta = nextPos - current;
-        MovePassenger(delta);
+        if (_passengerList != null && _passengerList.Count!=0 && delta != Vector2.zero)
+            foreach(var passenger in _passengerList)
+            {
+                CarryPassengerClientRpc(
+                    passenger.GetComponent<NetworkObject>().NetworkObjectId, delta);
+            }
+            
         transform.position = new Vector3(nextPos.x, nextPos.y, transform.position.z);
     }
-
-    // ════════════════════════════════════════════════════════
-    // WAYPOINT LOGIC
-    // ════════════════════════════════════════════════════════
-
+#endregion
+    
+    //Waypoint Logic
     private void OnWaypointReached()
     {
         if (waypointPause > 0f)
@@ -164,43 +138,52 @@ public class PlatformMover : MonoBehaviour
         }
     }
 
-    // ════════════════════════════════════════════════════════
     // PASSENGER CARRYING
-    // ════════════════════════════════════════════════════════
-
     private void OnCollisionEnter2D(Collision2D col)
     {
+        if(!IsServer) return;
+        
         Debug.Log($"Collision Entered {col.gameObject.name}");
         if (!IsInLayerMask(col.gameObject.layer, passengerLayers)) return;
 
         // Only carry if the passenger is landing on top
-        if (col.contacts[0].normal.y > 0.5f) return;
+        if (col.contacts[0].normal.y < 0.5f) return;
         Debug.Log("Parenting");
-        _passenger = col.transform;
-        _passenger.SetParent(transform);
+        PlayerController passenger = col.gameObject.GetComponentInParent<PlayerController>();
+        if(passenger != null)
+            _passengerList.Add(passenger);
     }
 
     private void OnCollisionExit2D(Collision2D col)
     {
-        if (col.transform == _passenger)
+        if(!IsServer) return;
+
+        PlayerController passenger = col.gameObject.GetComponentInParent<PlayerController>();
+        if(passenger != null && _passengerList.Contains(passenger))
         {
-            _passenger.SetParent(null);
-            _passenger = null;
+            _passengerList.Remove(passenger);
         }
     }
 
-    private void MovePassenger(Vector2 delta)
+    [ClientRpc]
+    private void CarryPassengerClientRpc(ulong networkObjectId, Vector2 delta)
     {
-        // Parenting handles it — this is here for subclasses or non-parenting approaches
+        if (!NetworkManager.Singleton.SpawnManager.SpawnedObjects
+                .TryGetValue(networkObjectId, out var netObj)) return;
+
+        // Only the owning client moves their own player
+        if (!netObj.IsOwner) return;
+
+        var rb = netObj.GetComponent<Rigidbody2D>();
+        if (rb != null)
+            rb.position += delta;
     }
 
     private bool IsInLayerMask(int layer, LayerMask mask) =>
         (mask.value & (1 << layer)) != 0;
 
-    // ════════════════════════════════════════════════════════
-    // PUBLIC API
-    // ════════════════════════════════════════════════════════
-
+    
+    //PUBLIC API
     public void SetPaused(bool paused) => _stopped = paused;
     public void ResetToStart()
     {
@@ -212,12 +195,9 @@ public class PlatformMover : MonoBehaviour
             _worldWaypoints[0].x, _worldWaypoints[0].y, transform.position.z);
     }
 
-    // ════════════════════════════════════════════════════════
-    // HELPERS
-    // ════════════════════════════════════════════════════════
-
+#region Helpers
     /// <summary>
-    /// Returns the speed to use when travelling toward <paramref name="targetIndex"/>.
+    /// Returns the speed to use when traveling toward <paramref name="targetIndex"/>.
     /// Falls back to the global moveSpeed if no override is defined for that index.
     /// </summary>
     private float GetCurrentSpeed(int targetIndex)
@@ -227,10 +207,6 @@ public class PlatformMover : MonoBehaviour
         return moveSpeed;
     }
     
-    // ════════════════════════════════════════════════════════
-    // GIZMOS
-    // ════════════════════════════════════════════════════════
-
     private void OnDrawGizmosSelected()
     {
         if (waypoints == null || waypoints.Length == 0) return;
@@ -274,4 +250,5 @@ public class PlatformMover : MonoBehaviour
             Gizmos.DrawLine(last, first);
         }
     }
+#endregion
 }

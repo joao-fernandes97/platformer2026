@@ -1,8 +1,9 @@
+using Unity.Netcode;
 using UnityEngine;
 using UnityEngine.InputSystem;
 
 [RequireComponent(typeof(PlayerInput))]
-public class PlayerInputHandler : MonoBehaviour
+public class PlayerInputHandler : NetworkBehaviour
 {
     public Vector2 MoveInput    { get; private set; }
     public bool    JumpPressed  { get; private set; }
@@ -17,15 +18,15 @@ public class PlayerInputHandler : MonoBehaviour
     private InputAction _climbAction;
     private InputAction _interactAction;
 
-    private void Start()
+    public override void OnNetworkSpawn()
     {
+        if(!IsOwner) return;
+
         var playerInput = GetComponent<PlayerInput>();
 
-        // Explicitly pair the keyboard to this PlayerInput using whichever
-        // Default Scheme you set in the Inspector ("WASD" or "Arrows").
-        // This is what populates the devices list and activates the binding mask.
+        //Hardcode WASD controls for network setup
         playerInput.SwitchCurrentControlScheme(
-            playerInput.defaultControlScheme,
+            "WASD",
             Keyboard.current
         );
 
@@ -41,8 +42,9 @@ public class PlayerInputHandler : MonoBehaviour
         _interactAction.performed += OnInteractPerformed;
     }
 
-    private void OnDestroy()
+    public override void OnDestroy()
     {
+        base.OnDestroy();
         if (_jumpAction == null) return;
         _jumpAction.performed  -= OnJumpPerformed;
         _jumpAction.canceled   -= OnJumpCanceled;
@@ -52,6 +54,7 @@ public class PlayerInputHandler : MonoBehaviour
 
     private void Update()
     {
+        if(!IsOwner) return;
         if (_moveAction == null) return;
         MoveInput  = _moveAction.ReadValue<Vector2>();
         SprintHeld = _sprintAction.IsPressed();
@@ -60,11 +63,13 @@ public class PlayerInputHandler : MonoBehaviour
 
     private void LateUpdate()
     {
+        if(!IsOwner) return;
         InteractPressed = false;
     }
 
     public void ConsumeFrameInputs()
     {
+        if(!IsOwner) return;
         JumpPressed  = false;
         ClimbPressed = false;
     }

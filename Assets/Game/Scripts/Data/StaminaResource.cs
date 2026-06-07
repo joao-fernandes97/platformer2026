@@ -1,40 +1,29 @@
+using Unity.Netcode;
 using UnityEngine;
 
 /// <summary>
-/// Pure stamina resource. No MonoBehaviour — owned and ticked by PlayerController.
-/// Keeping it as a plain class makes it trivially serializable for network sync later:
-/// NGO: just put currentStamina in a NetworkVariable<float>.
+/// Pure stamina resource. No MonoBehaviour, owned and ticked by PlayerController.
 /// </summary>
 [System.Serializable]
 public class StaminaResource
 {
     [Header("Config")]
-    [Tooltip("Maximum stamina points.")]
     public float maxStamina = 100f;
-
-    [Tooltip("Stamina drained per second while sprinting.")]
     public float drainRate = 20f;
-
-    [Tooltip("Stamina recovered per second when not sprinting.")]
     public float regenRate = 15f;
-
-    [Tooltip("Seconds after sprint stops before regen begins.")]
     public float regenDelay = 0.5f;
-
-    [Tooltip("Minimum stamina required to START a sprint (prevents flicker at 0).")]
+    //min stam needed to start sprinting
     public float sprintMinThreshold = 10f;
 
-    // ── Runtime State ────────────────────────────────────────────────────────
+    //Runtime State
     public float Current        { get; private set; }
     public float Normalized     => Current / maxStamina;
     public bool  IsExhausted    { get; private set; }
 
     private float _regenDelayTimer;
 
-    // ── Init ─────────────────────────────────────────────────────────────────
     public void Initialize() => Current = maxStamina;
 
-    // ── Tick (call every frame from PlayerController) ────────────────────────
     /// <param name="wantsSprint">True when player holds sprint AND is moving.</param>
     /// <returns>True if sprint is active this frame.</returns>
     public bool Tick(bool wantsSprint, float deltaTime)

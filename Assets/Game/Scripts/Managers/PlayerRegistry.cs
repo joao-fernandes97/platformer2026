@@ -4,21 +4,14 @@ using System.Collections.Generic;
 /// <summary>
 /// Lightweight registry of active PlayerControllers in the scene.
 /// Enemies query this instead of calling FindObjectsByType every frame.
-///
-/// Players register themselves in OnEnable / deregister in OnDisable,
-/// so the list is always current even as players spawn and despawn.
-///
-/// MULTIPLAYER NOTE:
-///   In NGO server-auth, only the server needs to run enemy AI, so this
-///   registry only needs to be accurate on the server. No changes required —
-///   NetworkObjects still call OnEnable/OnDisable on the server, so
-///   registration happens automatically.
 /// </summary>
 public class PlayerRegistry : MonoBehaviour
 {
     public static PlayerRegistry Instance { get; private set; }
 
-    private readonly List<PlayerController> _players = new();
+    private readonly Dictionary<PlayerController, HealthComponent> _players = new();
+    private List<(PlayerController, HealthComponent)> _snapshot = new();
+    private bool _snapshotDirty = true;
 
     private void Awake()
     {
@@ -28,6 +21,7 @@ public class PlayerRegistry : MonoBehaviour
             return;
         }
         Instance = this;
+        DontDestroyOnLoad(gameObject);
     }
 
     private void Start()
@@ -40,37 +34,60 @@ public class PlayerRegistry : MonoBehaviour
             Register(pc);
     }
 
-    // ── Registration ──────────────────────────────────────────────────────────
-
+    // Registration
     public void Register(PlayerController player)
     {
-        if (!_players.Contains(player))
-        {
-            _players.Add(player);
-            Debug.Log($"[Registry] Registered {player.name} — total: {_players.Count}");
-        }
-        else
+        if (_players.ContainsKey(player)) 
         {
             Debug.LogWarning($"[Registry] {player.name} tried to register but was already in list.");
+            return;
         }
+
+        var health = player.GetComponent<HealthComponent>();
+        if (health == null)
+        {
+            Debug.LogWarning($"[Registry] {player.name} has no HealthComponent — not registered.");
+            return;
+        }
+
+        _players[player] = health;
+        _snapshotDirty = true;
+        Debug.Log($"[Registry] Registered {player.name} — total: {_players.Count}");
     }
 
     public void Deregister(PlayerController player)
     {
-        _players.Remove(player);
+        if(_players.Remove(player))
+            _snapshotDirty = true;
     }
 
-    // ── Queries ───────────────────────────────────────────────────────────────
+    //Snapshot
+    private List<(PlayerController, HealthComponent)> GetSnapshot()
+    {
+        if (_snapshotDirty)
+        {
+            // Take a point-in-time copy of the keys so mid-rebuild Deregister
+            // calls don't invalidate the iteration.
+            var entries = new List<KeyValuePair<PlayerController, HealthComponent>>(_players);
+            var fresh   = new List<(PlayerController, HealthComponent)>(entries.Count);
+            foreach (var kvp in entries)
+                fresh.Add((kvp.Key, kvp.Value));
+            _snapshot      = fresh;
+            _snapshotDirty = false;
+        }
+        return _snapshot;
+    }
 
+    //Queries
     /// <summary>Returns the living player closest to worldPos, or null if none.</summary>
     public PlayerController GetClosest(Vector2 worldPos)
     {
         PlayerController closest  = null;
         float            bestDist = float.MaxValue;
 
-        foreach (var player in _players)
+        foreach (var (player, health) in GetSnapshot())
         {
-            if (player == null || player.GetComponent<HealthComponent>().IsDead) continue;
+            if (player == null || health.IsDead) continue;
 
             float dist = ((Vector2)player.transform.position - worldPos).sqrMagnitude;
             if (dist < bestDist)
@@ -86,12 +103,12 @@ public class PlayerRegistry : MonoBehaviour
     /// <summary>Returns all living players within radius.</summary>
     public List<PlayerController> GetWithinRadius(Vector2 worldPos, float radius)
     {
-        var results    = new List<PlayerController>();
+        List<PlayerController> results    = new();
         float radiusSq = radius * radius;
 
-        foreach (var player in _players)
+        foreach (var (player, health) in GetSnapshot())
         {
-            if (player == null || player.GetComponent<HealthComponent>().IsDead) continue;
+            if (player == null || health.IsDead) continue;
 
             if (((Vector2)player.transform.position - worldPos).sqrMagnitude <= radiusSq)
                 results.Add(player);
@@ -103,11 +120,11 @@ public class PlayerRegistry : MonoBehaviour
     /// <summary>Returns all currently living players. Used by the camera system.</summary>
     public List<PlayerController> GetAllLiving()
     {
-        var results = new List<PlayerController>();
+        List<PlayerController> results = new();
 
-        foreach (var player in _players)
+        foreach (var (player, health) in GetSnapshot())
         {
-            if (player == null || player.GetComponent<HealthComponent>().IsDead) continue;
+            if (player == null || health.IsDead) continue;
             results.Add(player);
         }
         return results;

@@ -8,60 +8,23 @@ using UnityEngine.UI;
 /// Self-contained — creates its own Canvas and Image at runtime so no
 /// prefab or scene setup is required. Just attach to any GameObject
 /// and assign it to CheckpointManager.screenFader in the Inspector.
-///
-/// ═══════════════════════════════════════════════════════════
-///  USAGE
-/// ═══════════════════════════════════════════════════════════
-///  yield return _fader.FadeOut(duration);   // screen goes to fadeColour
-///  // … do work while screen is covered …
-///  yield return _fader.FadeIn(duration);    // screen clears
-///
-///  Both methods return a Coroutine so they can be yielded from any
-///  other coroutine, including ones running on other MonoBehaviours.
-///
-///  SetAlpha() / SetAlphaImmediate() are available for instant snaps.
-///
-/// ═══════════════════════════════════════════════════════════
-///  MULTIPLAYER MIGRATION
-/// ═══════════════════════════════════════════════════════════
-///  Each client owns its own camera/UI stack, so this component needs
-///  no network changes — just call FadeOut / FadeIn locally on each
-///  client from within the ClientRpc that handles respawn.
 /// </summary>
 public class ScreenFader : MonoBehaviour
 {
-    // ════════════════════════════════════════════════════════
-    // INSPECTOR CONFIG
-    // ════════════════════════════════════════════════════════
-
-    [Tooltip("Colour the screen fades to. Black is the standard default.")]
     public Color fadeColour = Color.black;
-
-    [Tooltip("Canvas sort order. Must be higher than any in-game UI so the " +
-             "fade always renders on top.")]
     public int sortOrder = 100;
-
-    // ════════════════════════════════════════════════════════
-    // PRIVATE STATE
-    // ════════════════════════════════════════════════════════
 
     private Image     _overlay;
     private Coroutine _activeTween;
 
-    // ════════════════════════════════════════════════════════
     // LIFECYCLE
-    // ════════════════════════════════════════════════════════
-
     private void Awake()
     {
         BuildOverlay();
         SetAlphaImmediate(0f);   // start fully transparent
     }
 
-    // ════════════════════════════════════════════════════════
-    // PUBLIC API
-    // ════════════════════════════════════════════════════════
-
+#region Public API
     /// <summary>
     /// Fade the screen TO the fadeColour (transparent → opaque).
     /// Returns a Coroutine that can be yielded:
@@ -94,11 +57,8 @@ public class ScreenFader : MonoBehaviour
         CancelActiveTween();
         ApplyAlpha(alpha);
     }
-
-    // ════════════════════════════════════════════════════════
-    // TWEEN
-    // ════════════════════════════════════════════════════════
-
+#endregion
+    
     private IEnumerator TweenAlpha(float targetAlpha, float duration)
     {
         float startAlpha = _overlay.color.a;
@@ -123,10 +83,9 @@ public class ScreenFader : MonoBehaviour
         _activeTween = null;
     }
 
-    // ════════════════════════════════════════════════════════
-    // HELPERS
-    // ════════════════════════════════════════════════════════
-
+    
+#region Helpers
+    
     private void ApplyAlpha(float alpha)
     {
         if (_overlay == null) return;
@@ -179,4 +138,5 @@ public class ScreenFader : MonoBehaviour
         rect.offsetMin  = Vector2.zero;
         rect.offsetMax  = Vector2.zero;
     }
+#endregion
 }

@@ -1,73 +1,40 @@
 using System.Collections;
+using Unity.Netcode;
 using UnityEngine;
 
 /// <summary>
-/// An object (platform, wall, bridge…) that can be activated or deactivated,
+/// An object that can be activated or deactivated,
 /// optionally with a smooth scale/fade transition.
-///
-/// ═══════════════════════════════════════════════════════════
-///  QUICK SETUP
-/// ═══════════════════════════════════════════════════════════
-///  1. Attach to the platform / object you want to appear.
-///  2. On the ActivationButton, drag this object into the
-///     OnActivated UnityEvent → select ActivatableObject.Activate().
-///  3. Optionally bind OnDeactivated → ActivatableObject.Deactivate().
-///
-///  Or subscribe from code:
-///      button.OnStateChanged += myActivatable.SetActivated;
-///
-/// ═══════════════════════════════════════════════════════════
-///  APPEARANCE STYLES
-/// ═══════════════════════════════════════════════════════════
-///  Instant     — SetActive on/off, no animation.
-///  Scale       — scales from zero → full size (or reverse).
-///  Fade        — fades SpriteRenderer alpha in / out.
-///                (Also fades a child named "Shadow" if present.)
-///
-/// ═══════════════════════════════════════════════════════════
-///  MULTIPLAYER MIGRATION (NGO server-auth)
-/// ═══════════════════════════════════════════════════════════
-///  1. Inherit NetworkBehaviour.
-///  2. Replace _isActive with a NetworkVariable<bool>.
-///  3. Drive Activate / Deactivate from the server only.
-///  4. Visual tween (coroutine) stays client-side — triggered by the
-///     NetworkVariable's OnValueChanged callback.
 /// </summary>
-public class ActivatableObject : MonoBehaviour
+public class ActivatableObject : NetworkBehaviour
 {
-    // ════════════════════════════════════════════════════════
-    // INSPECTOR CONFIG
-    // ════════════════════════════════════════════════════════
-
     public enum AppearStyle { Instant, Scale, Fade }
 
     [Header("State")]
-    [Tooltip("Is the object active (visible / solid) at start?")]
     public bool startActive = false;
 
     [Header("Appearance")]
     public AppearStyle appearStyle  = AppearStyle.Scale;
-
-    [Tooltip("Seconds to transition in or out.")]
     public float transitionDuration = 0.3f;
-
-    [Tooltip("Disable the Collider2D while the object is inactive so players can't stand on an invisible platform.")]
     public bool disableColliderWhenInactive = true;
 
-    // ════════════════════════════════════════════════════════
-    // RUNTIME STATE
-    // ════════════════════════════════════════════════════════
+    // Server writes; all clients read. OnValueChanged drives visuals on
+    // every client (including the server/host) whenever the value changes.
+    private readonly NetworkVariable<bool> _isActive = new(
+        false,
+        NetworkVariableReadPermission.Everyone,
+        NetworkVariableWritePermission.Server);
 
-    public bool IsActive { get; private set; }
 
-    private Vector3          _originalScale;
-    private SpriteRenderer   _sprite;
-    private Collider2D        _collider;
-    private Coroutine         _tween;
+    private Vector3        _originalScale;
+    private SpriteRenderer _sprite;
+    private Collider2D     _collider;
+    private Coroutine      _tween;
 
-    // ════════════════════════════════════════════════════════
-    // LIFECYCLE
-    // ════════════════════════════════════════════════════════
+    public bool IsActive => _isActive.Value;
+
+
+#region Lifecycle
 
     private void Awake()
     {
@@ -76,35 +43,60 @@ public class ActivatableObject : MonoBehaviour
         _collider      = GetComponent<Collider2D>();
     }
 
-    private void Start()
+    public override void OnNetworkSpawn()
     {
-        // Apply initial state without a transition.
-        ApplyImmediate(startActive);
+        // Subscribe on all clients so any server write propagates visuals locally.
+        _isActive.OnValueChanged += OnActiveValueChanged;
+
+        if (IsServer)
+        {
+            // Authoritative initial value — triggers OnValueChanged on all clients.
+            _isActive.Value = startActive;
+        }
+        ApplyImmediate(_isActive.Value);
     }
 
-    // ════════════════════════════════════════════════════════
-    // PUBLIC API
-    // ════════════════════════════════════════════════════════
+    public override void OnNetworkDespawn()
+    {
+        _isActive.OnValueChanged -= OnActiveValueChanged;
+    }
+#endregion
 
-    /// <summary>Make the object appear.</summary>
+#region  Network Callbacks
+
+    private void OnActiveValueChanged(bool previous, bool current)
+    {
+        // Server: update the physics collider immediately so authority is correct.
+        if (IsServer)
+            UpdateCollider(current);
+
+        // All clients: run the visual transition.
+        ApplyVisual(current);
+    }
+#endregion
+    
+#region  Public API
+
+    /// <summary>Make the object appear. Call on server only.</summary>
     public void Activate()   => SetActivated(true);
 
-    /// <summary>Make the object disappear.</summary>
+    /// <summary>Make the object disappear. Call on server only.</summary>
     public void Deactivate() => SetActivated(false);
 
-    /// <summary>Toggle between active and inactive states.</summary>
-    public void Toggle()     => SetActivated(!IsActive);
+    /// <summary>Toggle between states. Call on server only.</summary>
+    public void Toggle()     => SetActivated(!_isActive.Value);
 
-    /// <summary>
-    /// Directly set the active state. Signature matches ActivationButton.OnStateChanged
-    /// so it can be subscribed directly:
-    ///   button.OnStateChanged += myActivatable.SetActivated;
-    /// </summary>
     public void SetActivated(bool active)
     {
-        if (IsActive == active) return;
-        IsActive = active;
+        if (!IsServer) return;
+        if (_isActive.Value == active) return;
+        _isActive.Value = active;   // drives OnActiveValueChanged on all clients
+    }
+#endregion
 
+#region Visuals
+    private void ApplyVisual(bool active)
+    {
         if (_tween != null)
             StopCoroutine(_tween);
 
@@ -124,49 +116,30 @@ public class ActivatableObject : MonoBehaviour
         }
     }
 
-    // ════════════════════════════════════════════════════════
-    // INSTANT APPLY
-    // ════════════════════════════════════════════════════════
-
     private void ApplyImmediate(bool active)
     {
-        IsActive = active;
-
-        // Renderer
         if (_sprite != null)
         {
-            var c     = _sprite.color;
-            c.a       = active ? 1f : 0f;
+            var c = _sprite.color;
+            c.a   = active ? 1f : 0f;
             _sprite.color = c;
         }
 
-        // Scale
         transform.localScale = active ? _originalScale : Vector3.zero;
-
-        // Collider
         UpdateCollider(active);
     }
 
-    // ════════════════════════════════════════════════════════
-    // TWEEN: SCALE
-    // ════════════════════════════════════════════════════════
-
     private IEnumerator TweenScale(bool appearing)
     {
-        // Always enable the collider before appearing so the object is solid
-        // as soon as it starts to solidify; disable it instantly on disappear.
-        if (appearing)
+        // Enable collider before appearing so it's solid as it grows;
+        // disable immediately on disappear.
+        UpdateCollider(appearing);
+
+        if (_sprite != null)
         {
-            UpdateCollider(true);
-            if (_sprite != null)
-            {
-                var c = _sprite.color; c.a = 1f;
-                _sprite.color = c;
-            }
-        }
-        else
-        {
-            UpdateCollider(false);
+            var c = _sprite.color;
+            c.a   = appearing ? 1f : _sprite.color.a;
+            _sprite.color = c;
         }
 
         Vector3 startScale = transform.localScale;
@@ -176,7 +149,7 @@ public class ActivatableObject : MonoBehaviour
         while (elapsed < transitionDuration)
         {
             elapsed += Time.deltaTime;
-            float t = Mathf.SmoothStep(0f, 1f, elapsed / transitionDuration);
+            float t  = Mathf.SmoothStep(0f, 1f, elapsed / transitionDuration);
             transform.localScale = Vector3.LerpUnclamped(startScale, endScale, t);
             yield return null;
         }
@@ -184,10 +157,6 @@ public class ActivatableObject : MonoBehaviour
         transform.localScale = endScale;
         _tween = null;
     }
-
-    // ════════════════════════════════════════════════════════
-    // TWEEN: FADE
-    // ════════════════════════════════════════════════════════
 
     private IEnumerator TweenFade(bool appearing)
     {
@@ -209,7 +178,7 @@ public class ActivatableObject : MonoBehaviour
         while (elapsed < transitionDuration)
         {
             elapsed += Time.deltaTime;
-            float t = Mathf.SmoothStep(0f, 1f, elapsed / transitionDuration);
+            float t  = Mathf.SmoothStep(0f, 1f, elapsed / transitionDuration);
 
             var c = _sprite.color;
             c.a = Mathf.Lerp(startAlpha, endAlpha, t);
@@ -227,20 +196,15 @@ public class ActivatableObject : MonoBehaviour
 
         _tween = null;
     }
-
-    // ════════════════════════════════════════════════════════
-    // HELPERS
-    // ════════════════════════════════════════════════════════
+#endregion
+    
+#region  Helpers
 
     private void UpdateCollider(bool active)
     {
         if (_collider == null || !disableColliderWhenInactive) return;
         _collider.enabled = active;
     }
-
-    // ════════════════════════════════════════════════════════
-    // GIZMOS
-    // ════════════════════════════════════════════════════════
 
     private void OnDrawGizmosSelected()
     {
@@ -253,4 +217,5 @@ public class ActivatableObject : MonoBehaviour
         else
             Gizmos.DrawSphere(transform.position, 0.3f);
     }
+#endregion
 }

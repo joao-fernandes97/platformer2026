@@ -1,39 +1,19 @@
 using UnityEngine;
 
 /// <summary>
-/// Detects climbable ledges via two raycasts:
-///   1. "Wall check"  — horizontal, detects a wall at chest height
-///   2. "Ledge check" — horizontal at a higher point; if wall hit but ledge missed → valid ledge
-///
-/// Attach to the same GameObject as PlayerController.
-///
-/// MULTIPLAYER NOTE:
-///   This runs on every client. For server-auth, validate the detected ledge point
-///   on the server before committing the grab state (send a ServerRpc with the point,
-///   server re-casts and confirms).
+/// Detects climbable ledges via raycasts
 /// </summary>
 public class LedgeDetector : MonoBehaviour
 {
     [Header("Detection")]
-    [Tooltip("Layer(s) that count as climbable geometry.")]
     public LayerMask geometryLayers;
-
-    [Tooltip("How far forward to cast rays.")]
     public float rayLength = 0.6f;
-
-    [Tooltip("Height offset from transform.position for the lower (wall) ray.")]
     public float wallRayHeight = 0.8f;
-
-    [Tooltip("Height offset for the upper (ledge top) ray — must be above ledge.")]
     public float ledgeRayHeight = 1.4f;
-
-    [Tooltip("Small downward offset applied to find the exact ledge surface.")]
     public float ledgeSurfaceDropOffset = 0.1f;
-
-    [Tooltip("Climb target offset")]
     public float climbTargetOffset = 0.3f;
 
-    // ── Public Results ────────────────────────────────────────────────────────
+    // Public Results
     /// <summary>True when a valid ledge is in front of the player.</summary>
     public bool  LedgeDetected   { get; private set; }
 
@@ -43,13 +23,13 @@ public class LedgeDetector : MonoBehaviour
     /// <summary>World-space point the player should stand at after climbing.</summary>
     public Vector3 ClimbTarget   { get; private set; }
 
-    // ── Internal ─────────────────────────────────────────────────────────────
+    // Internal
     private Transform _tf;
     private float     _facingSign = 1f;   // +1 right, -1 left
 
     private void Awake() => _tf = transform;
 
-    // ── Called by PlayerController each FixedUpdate ──────────────────────────
+    // Called by PlayerController each FixedUpdate
     public void UpdateDetection(float facingSign)
     {
         _facingSign  = facingSign;
@@ -64,7 +44,7 @@ public class LedgeDetector : MonoBehaviour
         bool wallHit  = Physics2D.Raycast(wallOrigin,  direction, rayLength, geometryLayers);
         bool ledgeHit = Physics2D.Raycast(ledgeOrigin, direction, rayLength, geometryLayers);
 
-        // Wall present but top is clear → there's a ledge to grab
+        // Wall present but top is clear > there's a ledge to grab
         if (wallHit && !ledgeHit)
         {
             RaycastHit2D hit = Physics2D.Raycast(wallOrigin, direction, rayLength, geometryLayers);
@@ -92,7 +72,7 @@ public class LedgeDetector : MonoBehaviour
         }
     }
 
-    // ── Gizmos ────────────────────────────────────────────────────────────────
+    // Gizmos
     private void OnDrawGizmosSelected()
     {
         if (_tf == null) _tf = transform;

@@ -2,40 +2,15 @@ using UnityEngine;
 using UnityEngine.Events;
 using System;
 using System.Collections.Generic;
+using Unity.Netcode;
 
 /// <summary>
 /// Interactable button. A player enters the trigger zone and presses the
-/// Interact action (bound per-player in PlayerInputActions — works for both
-/// the WASD and Arrows control schemes automatically).
-///
-/// ═══════════════════════════════════════════════════════════
-///  WIRING UP
-/// ═══════════════════════════════════════════════════════════
-///  Option A — Inspector (UnityEvent):
-///    Drag the target ActivatableObject into OnActivated / OnDeactivated
-///    in the Inspector and bind Activate() / Deactivate().
-///
-///  Option B — Code (C# event):
-///    button.OnStateChanged += (active) => myObject.SetActivated(active);
-///
-///  Both work simultaneously — mix freely.
-///
-/// ═══════════════════════════════════════════════════════════
-///  MULTIPLAYER MIGRATION (NGO server-auth)
-/// ═══════════════════════════════════════════════════════════
-///  1. Inherit NetworkBehaviour.
-///  2. On interact, send a ServerRpc from the local client.
-///  3. Server validates and calls SetState(); broadcasts via ClientRpc.
-///  4. _inputsInZone tracking stays local — each client knows which
-///     players are inside its trigger (NetworkObject colliders replicate).
+/// Interact action.
 /// </summary>
 [RequireComponent(typeof(Collider2D))]
-public class ActivationButton : MonoBehaviour
+public class ActivationButton : NetworkBehaviour
 {
-    // ════════════════════════════════════════════════════════
-    // INSPECTOR CONFIG
-    // ════════════════════════════════════════════════════════
-
     public enum ActivationMode
     {
         /// <summary>A player must press Interact while inside the zone.</summary>
@@ -60,14 +35,12 @@ public class ActivationButton : MonoBehaviour
     public ActivationMode  activationMode  = ActivationMode.PressToActivate;
     public ToggleBehaviour toggleBehaviour = ToggleBehaviour.Toggle;
 
-    [Tooltip("Start in the activated state?")]
     public bool startActivated = false;
 
     [Header("Prompt")]
-    [Tooltip("Optional world-space UI shown when a player is in range. Leave null to skip.")]
     public GameObject interactPrompt;
 
-    [Header("Events — Inspector")]
+    [Header("Events")]
     public UnityEvent OnActivated;
     public UnityEvent OnDeactivated;
 
@@ -75,26 +48,46 @@ public class ActivationButton : MonoBehaviour
     /// <summary>Fired whenever the button state changes. true = activated.</summary>
     public event Action<bool> OnStateChanged;
 
-    // ════════════════════════════════════════════════════════
-    // RUNTIME STATE
-    // ════════════════════════════════════════════════════════
+    
+    // NETWORK STATE
+    private readonly NetworkVariable<bool> _isActivated = new(
+        false,
+        NetworkVariableReadPermission.Everyone,
+        NetworkVariableWritePermission.Server
+    );
 
-    public bool IsActivated { get; private set; }
-
+    private int _serverPlayerCount;
+  
+    // LOCAL STATE
     // Counts how many colliders belonging to each handler are currently
     // inside the zone. A handler is "present" while its count > 0.
-    private readonly Dictionary<PlayerInputHandler, int> _collidersInZone = new();
+    private readonly Dictionary<PlayerInputHandler, int> _localCollidersInZone = new();
 
-    // ════════════════════════════════════════════════════════
-    // LIFECYCLE
-    // ════════════════════════════════════════════════════════
+    public bool IsActivated => _isActivated.Value;
 
+#region Lifecycle
     private void Awake()
     {
         // Ensure the collider is a trigger so it doesn't block physics.
         GetComponent<Collider2D>().isTrigger = true;
+    }
 
-        IsActivated = startActivated;
+    public override void OnNetworkSpawn()
+    {
+        base.OnNetworkSpawn();
+        _isActivated.OnValueChanged += OnActivatedValueChanged;
+
+        if(IsServer)
+        {
+            _isActivated.Value = startActivated;
+        }
+
+        SetPromptVisible(false);
+    }
+
+    public override void OnNetworkDespawn()
+    {
+        _isActivated.OnValueChanged -= OnActivatedValueChanged;
     }
 
     private void Start()
@@ -105,22 +98,28 @@ public class ActivationButton : MonoBehaviour
     private void Update()
     {
         if (activationMode != ActivationMode.PressToActivate) return;
-        if (_collidersInZone.Count == 0) return;
+        if (_localCollidersInZone.Count == 0) return;
 
         // Either player's Interact press triggers the button.
-        foreach (var (input, _) in _collidersInZone)
+        foreach (var (input, _) in _localCollidersInZone)
         {
             if (input.InteractPressed)
             {
-                TryActivate();
+                //TryActivate();
+                InteractServerRpc();
                 break;   // one activation per frame regardless of player count
             }
         }
     }
+#endregion
+   
+    //Network Callback
+    private void OnActivatedValueChanged(bool previous, bool current)
+    {
+        Fire(current);
+    }
 
-    // ════════════════════════════════════════════════════════
-    // TRIGGER ZONE
-    // ════════════════════════════════════════════════════════
+#region Trigger zone
 
     private void OnTriggerEnter2D(Collider2D other)
     {       
@@ -128,13 +127,13 @@ public class ActivationButton : MonoBehaviour
         if (input == null) return;
 
                 // Increment this handler's collider count.
-        _collidersInZone.TryGetValue(input, out int count);
-        _collidersInZone[input] = count + 1;
+        _localCollidersInZone.TryGetValue(input, out int count);
+        _localCollidersInZone[input] = count + 1;
  
         // Only react on the first collider that enters (i.e. when the
         // player wasn't in the zone at all before this).
         if (count == 0)
-            OnPlayerEnteredZone(input);
+            OnLocalPlayerFirstEntered(input);
     }
 
     private void OnTriggerExit2D(Collider2D other)
@@ -142,88 +141,156 @@ public class ActivationButton : MonoBehaviour
         var input = other.GetComponentInParent<PlayerInputHandler>();
         if (input == null) return;
 
-        if (!_collidersInZone.ContainsKey(input)) return;
+        if (!_localCollidersInZone.ContainsKey(input)) return;
 
-        int remaining = _collidersInZone[input] - 1;
+        int remaining = _localCollidersInZone[input] - 1;
 
-                if (remaining <= 0)
+        if (remaining <= 0)
         {
             // Last collider left — player has truly exited.
-            _collidersInZone.Remove(input);
-            OnPlayerExitedZone();
+            _localCollidersInZone.Remove(input);
+            OnLocalPlayerFullyExited(input);
         }
         else
         {
-            _collidersInZone[input] = remaining;
+            _localCollidersInZone[input] = remaining;
         }
     }
 
-        private void OnPlayerEnteredZone(PlayerInputHandler input)
+    private void OnLocalPlayerFirstEntered(PlayerInputHandler input)
+    {
+        // Show the prompt locally regardless of mode.
+        if (activationMode == ActivationMode.PressToActivate)
+            SetPromptVisible(true);
+
+        // Notify the server so it can update its authoritative player count.
+        PlayerZoneChangedServerRpc(true);
+    }
+ 
+    // Called when the last collider of a local player exits the zone.
+    private void OnLocalPlayerFullyExited(PlayerInputHandler input)
+    {
+        if (activationMode == ActivationMode.PressToActivate)
+        {
+            if (_localCollidersInZone.Count == 0)
+                SetPromptVisible(false);
+        }
+
+        PlayerZoneChangedServerRpc(false);
+    }
+#endregion
+    
+#region  Server RPCS 
+    /// <summary>
+    /// Sent by a client whenever a local player fully enters or exits the zone.
+    /// The server is the sole authority on _serverPlayerCount so only it
+    /// decides when to fire AutoOnEnter / PressurePlate state changes.
+    /// </summary>
+    [Rpc(SendTo.Server, InvokePermission = RpcInvokePermission.Everyone)]
+    private void PlayerZoneChangedServerRpc(bool entered)
+    {
+        if (entered)
+        {
+            _serverPlayerCount++;
+            if (_serverPlayerCount == 1)
+                ServerOnFirstPlayerEntered();
+        }
+        else
+        {
+            _serverPlayerCount = Mathf.Max(0, _serverPlayerCount - 1);
+            if (_serverPlayerCount == 0)
+                ServerOnLastPlayerExited();
+        }
+    }
+
+    /// <summary>
+    /// Sent by the owning client when the player presses Interact inside the zone.
+    /// Server validates toggle behaviour and updates the NetworkVariable.
+    /// </summary>
+    [Rpc(SendTo.Server, InvokePermission = RpcInvokePermission.Everyone)]
+    private void InteractServerRpc()
+    {
+        if (activationMode != ActivationMode.PressToActivate) return;
+
+        switch (toggleBehaviour)
+        {
+            case ToggleBehaviour.Toggle:
+                _isActivated.Value = !_isActivated.Value;
+                break;
+
+            case ToggleBehaviour.OneShot:
+                if (!_isActivated.Value)
+                    _isActivated.Value = true;
+                break;
+
+            case ToggleBehaviour.Momentary:
+                // Momentary has no persisted state — pulse all clients directly.
+                FireMomentaryClientRpc();
+                break;
+        }
+    }
+#endregion
+
+#region Server only Logic
+
+    private void ServerOnFirstPlayerEntered()
     {
         switch (activationMode)
         {
             case ActivationMode.AutoOnEnter:
-                TryActivate();
+                ServerTryActivate();
                 break;
- 
+
             case ActivationMode.PressurePlate:
-                if (_collidersInZone.Count == 1)   // first player
-                    SetState(true);
-                break;
- 
-            case ActivationMode.PressToActivate:
-                SetPromptVisible(true);
-                break;
-        }
-    }
- 
-    private void OnPlayerExitedZone()
-    {
-        switch (activationMode)
-        {
-            case ActivationMode.PressurePlate:
-                if (_collidersInZone.Count == 0)
-                    SetState(false);
-                break;
- 
-            case ActivationMode.PressToActivate:
-                if (_collidersInZone.Count == 0)
-                    SetPromptVisible(false);
+                _isActivated.Value = true;
                 break;
         }
     }
 
-    // ════════════════════════════════════════════════════════
-    // ACTIVATION LOGIC
-    // ════════════════════════════════════════════════════════
-
-    private void TryActivate()
+    private void ServerOnLastPlayerExited()
     {
+        if (activationMode == ActivationMode.PressurePlate)
+            _isActivated.Value = false;
+    }
+
+    private void ServerTryActivate()
+    {
+        // Called by AutoOnEnter on the server.
         switch (toggleBehaviour)
         {
             case ToggleBehaviour.Toggle:
-                SetState(!IsActivated);
+                _isActivated.Value = !_isActivated.Value;
                 break;
 
             case ToggleBehaviour.OneShot:
-                if (!IsActivated)
-                    SetState(true);
+                if (!_isActivated.Value)
+                    _isActivated.Value = true;
                 break;
 
             case ToggleBehaviour.Momentary:
-                // Always fires, regardless of current state.
-                Fire(true);
+                FireMomentaryClientRpc();
                 break;
         }
     }
+#endregion
 
-    private void SetState(bool active)
+#region Client RPCS
+
+    /// <summary>
+    /// Momentary mode has no persistent on/off state, so the NetworkVariable
+    /// alone can't drive it. This Rpc pulses all clients directly.
+    /// </summary>
+    [ClientRpc]
+    private void FireMomentaryClientRpc()
     {
-        if (IsActivated == active) return;
-        IsActivated = active;
-        Fire(active);
+        Fire(true);
     }
+#endregion
 
+    /// <summary>
+    /// Runs on every client, driven by NetworkVariable or Rpc
+    /// </summary>
+    /// <param name="active"></param>
     private void Fire(bool active)
     {
         OnStateChanged?.Invoke(active);
@@ -232,9 +299,7 @@ public class ActivationButton : MonoBehaviour
         else        OnDeactivated?.Invoke();
     }
 
-    // ════════════════════════════════════════════════════════
-    // HELPERS
-    // ════════════════════════════════════════════════════════
+#region Helpers
 
     private void SetPromptVisible(bool visible)
     {
@@ -243,14 +308,14 @@ public class ActivationButton : MonoBehaviour
     }
 
     /// <summary>
-    /// Force the button into a specific state from external code
-    /// (e.g. a puzzle reset).
+    /// Force the button into a specific state from external server-side code
+    /// (e.g. a puzzle reset). Must be called on the server.
     /// </summary>
-    public void ForceState(bool active) => SetState(active);
-
-    // ════════════════════════════════════════════════════════
-    // GIZMOS
-    // ════════════════════════════════════════════════════════
+    public void ForceState(bool active)
+    {
+        if (!IsServer) return;
+        _isActivated.Value = active;
+    }
 
     private void OnDrawGizmosSelected()
     {
@@ -270,4 +335,5 @@ public class ActivationButton : MonoBehaviour
                 circle.radius);
         }
     }
+#endregion
 }

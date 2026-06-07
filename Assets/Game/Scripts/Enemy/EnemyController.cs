@@ -1,66 +1,18 @@
+using Unity.Netcode;
 using UnityEngine;
 
 /// <summary>
-/// Chasing enemy with line-of-sight detection and memory.
-///
-/// ═══════════════════════════════════════════════════════════
-///  STATE MACHINE
-/// ═══════════════════════════════════════════════════════════
-///
-///  Idle ──(player in radius + LOS)──► Chase
-///                                        │
-///                                    (LOS lost)
-///                                        │
-///                                        ▼
-///                                   Investigate
-///                                (walk toward last
-///                                 known position)
-///                                        │
-///                               (arrived OR timeout)
-///                                        │
-///                                        ▼
-///                                       Idle
-///
-///  From Investigate: player re-enters LOS → back to Chase.
-///
-/// ═══════════════════════════════════════════════════════════
-///  LINE OF SIGHT
-/// ═══════════════════════════════════════════════════════════
-///  Raycast from eye height toward the player's centre.
-///  If geometry is hit before the player, LOS is blocked.
-///  Assign your geometry/ground layers to losBlockingLayers —
-///  leave triggers and non-solid layers out of that mask.
-///
-///  Initial aggro requires clear LOS. Once already chasing,
-///  LOS loss triggers Investigate rather than immediately
-///  returning to Idle, giving the enemy short-term memory.
-///
-/// ═══════════════════════════════════════════════════════════
-///  MULTIPLAYER MIGRATION (NGO server-authoritative)
-/// ═══════════════════════════════════════════════════════════
-///  1. Inherit NetworkBehaviour.
-///  2. Wrap FixedUpdate with: if (!IsServer) return;
-///  3. Add a NetworkTransform for client-side interpolation.
-///  4. TakeDamage via ServerRpc from clients.
-///  5. _target and _lastKnownPosition are server-only; no sync needed.
+/// Chasing enemy with line-of-sight detection and "memory".
 /// </summary>
 [RequireComponent(typeof(Rigidbody2D))]
 [RequireComponent(typeof(HealthComponent))]
 [RequireComponent(typeof(ContactDamage))]
-public class EnemyController : MonoBehaviour
+public class EnemyController : NetworkBehaviour
 {
-    // ════════════════════════════════════════════════════════
-    // INSPECTOR CONFIG
-    // ════════════════════════════════════════════════════════
-
     [Header("Detection")]
-    [Tooltip("Radius within which the enemy can notice players.")]
     public float aggroRadius = 8f;
-    [Tooltip("Layer(s) that block line of sight (typically your geometry layer).")]
     public LayerMask losBlockingLayers;
-    [Tooltip("Height above transform.position used as the eye origin for LOS raycasts.")]
     public float eyeHeight = 1f;
-    [Tooltip("How often (seconds) to re-evaluate the closest target.")]
     public float targetUpdateInterval = 0.5f;
 
     [Header("Movement")]
@@ -69,33 +21,22 @@ public class EnemyController : MonoBehaviour
     public float deceleration = 60f;
 
     [Header("Investigate")]
-    [Tooltip("How long the enemy keeps moving in the last known direction before giving up.")]
     public float investigateDuration = 5f;
 
     [Header("Death")]
-    [Tooltip("Seconds before the GameObject is destroyed after dying.")]
     public float despawnDelay = 1.5f;
 
-    // ════════════════════════════════════════════════════════
-    // STATES
-    // ════════════════════════════════════════════════════════
-
+    // States
     private enum EnemyState { Idle, Chase, Investigate }
 
     private EnemyState _state = EnemyState.Idle;
 
-    // ════════════════════════════════════════════════════════
-    // COMPONENTS
-    // ════════════════════════════════════════════════════════
-
+    // Components
     private Rigidbody2D     _rb;
     private HealthComponent _health;
     private Animator        _animator;   // optional
 
-    // ════════════════════════════════════════════════════════
-    // RUNTIME STATE
-    // ════════════════════════════════════════════════════════
-
+    // Runtime State
     private PlayerController _target;
     private float            _targetUpdateTimer;
     private float            _damageCooldownTimer;
@@ -105,10 +46,11 @@ public class EnemyController : MonoBehaviour
     private float   _lastKnownDirectionX;   // sign at moment of contact loss
     private float   _investigateTimer;
 
-    // ════════════════════════════════════════════════════════
-    // LIFECYCLE
-    // ════════════════════════════════════════════════════════
+    // Spawn snapshot. Recorded once on the server, used by ResetToSpawn
+    private Vector3 _spawnPosition;
+    private float   _spawnFacingSign = 1f;
 
+#region Lifecycle
     private void Awake()
     {
         _rb       = GetComponent<Rigidbody2D>();
@@ -119,13 +61,25 @@ public class EnemyController : MonoBehaviour
         _health.OnDied += OnDied;
     }
 
-    private void OnDestroy()
+    public override void OnNetworkSpawn()
     {
+        base.OnNetworkSpawn();
+        if (!IsServer) return;
+
+        // Snapshot spawn state so ResetToSpawn can restore it.
+        _spawnPosition   = transform.position;
+        _spawnFacingSign = transform.localScale.x >= 0f ? 1f : -1f;
+    }
+    
+    public override void OnDestroy()
+    {
+        base.OnDestroy();
         _health.OnDied -= OnDied;
     }
 
     private void FixedUpdate()
     {
+        if (!IsServer) return;
         if (_health.IsDead) return;
 
         UpdateTarget();
@@ -139,11 +93,9 @@ public class EnemyController : MonoBehaviour
 
         UpdateAnimator();
     }
-
-    // ════════════════════════════════════════════════════════
-    // LINE OF SIGHT
-    // ════════════════════════════════════════════════════════
-
+#endregion
+    
+#region Target Tracking
     private bool HasLineOfSight(PlayerController player)
     {
         Vector2 eyePos    = (Vector2)transform.position + Vector2.up * eyeHeight;
@@ -156,10 +108,7 @@ public class EnemyController : MonoBehaviour
         return hit.collider == null;
     }
 
-    // ════════════════════════════════════════════════════════
-    // TARGET TRACKING
-    // ════════════════════════════════════════════════════════
-
+    
     private void UpdateTarget()
     {
         _targetUpdateTimer -= Time.fixedDeltaTime;
@@ -179,7 +128,7 @@ public class EnemyController : MonoBehaviour
 
         if (hasLOS)
         {
-            // Clear sightline — start or continue chasing
+            // Clear sightline, start or continue chasing
             _target = candidate;
             TransitionTo(EnemyState.Chase);
         }
@@ -191,7 +140,7 @@ public class EnemyController : MonoBehaviour
         }
         else if (_state != EnemyState.Investigate)
         {
-            // Never had a target and nothing in LOS — stay idle
+            // Never had a target and nothing in LOS, stay idle
             LoseTarget();
         }
         // If already Investigating, let TickInvestigate drive the timeout
@@ -209,21 +158,16 @@ public class EnemyController : MonoBehaviour
         _investigateTimer = investigateDuration;
         TransitionTo(EnemyState.Investigate);
     }
-
-    // ════════════════════════════════════════════════════════
-    // STATE: IDLE
-    // ════════════════════════════════════════════════════════
-
+#endregion
+    
+#region States
+    
     private void TickIdle()
     {
         float newVelX = Mathf.MoveTowards(
             _rb.linearVelocityX, 0f, deceleration * Time.fixedDeltaTime);
         _rb.linearVelocity = new Vector2(newVelX, _rb.linearVelocityY);
     }
-
-    // ════════════════════════════════════════════════════════
-    // STATE: CHASE
-    // ════════════════════════════════════════════════════════
 
     private void TickChase()
     {
@@ -238,10 +182,6 @@ public class EnemyController : MonoBehaviour
 
         MoveToward(_target.transform.position);
     }
-
-    // ════════════════════════════════════════════════════════
-    // STATE: INVESTIGATE
-    // ════════════════════════════════════════════════════════
 
     private void TickInvestigate()
     {
@@ -262,10 +202,9 @@ public class EnemyController : MonoBehaviour
         _rb.linearVelocity   = new Vector2(newVelX, _rb.linearVelocityY);
         transform.localScale = new Vector3(_lastKnownDirectionX, 1f, 1f);
     }
-
-    // ════════════════════════════════════════════════════════
-    // SHARED MOVEMENT
-    // ════════════════════════════════════════════════════════
+#endregion
+    
+    // Shared Movement
 
     private void MoveToward(Vector2 destination)
     {
@@ -279,10 +218,50 @@ public class EnemyController : MonoBehaviour
         transform.localScale = new Vector3(_facingSign, 1f, 1f);
     }
 
-    // ════════════════════════════════════════════════════════
-    // DEATH
-    // ════════════════════════════════════════════════════════
+    /// <summary>
+    /// Reset  (server-only, called by CheckpointManager on respawn)
+    /// Teleports the enemy back to its spawn position and resets all AI state.
+    /// Must be called on the server. Does nothing if the enemy is already dead
+    /// (dead enemies self-destruct via Destroy and will not be in the scene).
+    /// </summary>
+    public void ResetToSpawn()
+    {
+        if (!IsServer) return;
+        if (_health.IsDead) return;
 
+        // Physics
+        _rb.bodyType       = RigidbodyType2D.Dynamic;
+        _rb.linearVelocity = Vector2.zero;
+        _rb.gravityScale   = 1f;
+
+        // Position
+        transform.position   = _spawnPosition;
+        transform.localScale = new Vector3(_spawnFacingSign, 1f, 1f);
+        _facingSign          = _spawnFacingSign;
+
+        // Collider
+        if (TryGetComponent<Collider2D>(out var col))
+            col.enabled = true;
+
+        // AI state
+        _target               = null;
+        _targetUpdateTimer    = 0f;
+        _investigateTimer     = 0f;
+        _lastKnownDirectionX  = _spawnFacingSign;
+        TransitionTo(EnemyState.Idle);
+
+        // Animator
+        if (_animator != null)
+        {
+            _animator.ResetTrigger(AnimDeath);
+            _animator.Rebind();
+            _animator.Update(0f);
+        }
+    }
+
+
+    
+    // Death
     private void OnDied()
     {
         _rb.linearVelocity = Vector2.zero;
@@ -297,20 +276,15 @@ public class EnemyController : MonoBehaviour
         Destroy(gameObject, despawnDelay);
     }
 
-    // ════════════════════════════════════════════════════════
-    // STATE MACHINE
-    // ════════════════════════════════════════════════════════
-
+    
+    // State Machine
     private void TransitionTo(EnemyState next)
     {
         if (_state == next) return;
         _state = next;
     }
 
-    // ════════════════════════════════════════════════════════
-    // ANIMATOR BRIDGE (optional)
-    // ════════════════════════════════════════════════════════
-
+    //Animator
     private static readonly int AnimSpeed       = Animator.StringToHash("Speed");
     private static readonly int AnimDeath       = Animator.StringToHash("Death");
     private static readonly int AnimChase       = Animator.StringToHash("Chasing");
@@ -325,10 +299,7 @@ public class EnemyController : MonoBehaviour
         _animator.SetBool(AnimInvestigate, _state == EnemyState.Investigate);
     }
 
-    // ════════════════════════════════════════════════════════
-    // GIZMOS
-    // ════════════════════════════════════════════════════════
-
+    // Gizmos
     private void OnDrawGizmosSelected()
     {
         // Aggro radius

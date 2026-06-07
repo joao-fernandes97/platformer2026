@@ -1,76 +1,38 @@
+using Unity.Netcode;
 using UnityEngine;
 
 /// <summary>
 /// Core 2D platformer character controller.
-///
-/// ═══════════════════════════════════════════════════════════
-///  ARCHITECTURE OVERVIEW
-/// ═══════════════════════════════════════════════════════════
-///  • State Machine  — each MoveState owns its own enter/tick/exit logic.
-///                     Adding new states (WallSlide, Dash…) is additive only.
-///
-///  • Input is read from PlayerInputHandler, never from InputSystem directly.
-///    Swap that component to go networked with zero changes here.
-///
-///  • Physics via Rigidbody2D. For NGO server-authority, move physics to
-///    the server and send position snapshots; for client-authority, move
-///    Rigidbody2D reads/writes behind an [IsOwner] guard.
-///
-/// ═══════════════════════════════════════════════════════════
-///  MULTIPLAYER MIGRATION CHECKLIST (Unity Netcode for GameObjects)
-/// ═══════════════════════════════════════════════════════════
-///  1. Inherit from NetworkBehaviour instead of MonoBehaviour.
-///  2. Wrap Update/FixedUpdate bodies with:  if (!IsOwner) return;
-///  3. Replace PlayerInputHandler with a networked input reader.
-///  4. Expose _stamina.Current as a NetworkVariable<float> for UI sync.
-///  5. Ledge ClimbTarget validation → ServerRpc + ClientRpc confirm.
-///  6. Animator state → NetworkAnimator component.
-///  7. Add a ClientNetworkTransform (or NetworkTransform) component.
-/// ═══════════════════════════════════════════════════════════
 /// </summary>
 [RequireComponent(typeof(Rigidbody2D))]
 [RequireComponent(typeof(PlayerInputHandler))]
 [RequireComponent(typeof(LedgeDetector))]
-public class PlayerController : MonoBehaviour
+public class PlayerController : NetworkBehaviour
 {
     // ════════════════════════════════════════════════════════
     // INSPECTOR CONFIG
     // ════════════════════════════════════════════════════════
 
     [Header("Movement")]
-    [Tooltip("Horizontal speed while walking.")]
     public float walkSpeed   = 6f;
-    [Tooltip("Horizontal speed multiplier when sprinting.")]
     public float sprintMultiplier = 1.65f;
-    [Tooltip("How quickly horizontal speed ramps up from zero.")]
     public float acceleration = 60f;
-    [Tooltip("How quickly horizontal speed brakes to zero.")]
     public float deceleration = 80f;
 
     [Header("Jump")]
-    [Tooltip("Initial upward velocity on jump.")]
     public float jumpForce = 14f;
-    [Tooltip("Extra gravity applied when falling.")]
     public float fallGravityMultiplier = 2.5f;
-    [Tooltip("Reduced gravity while holding jump at apex (floaty feel).")]
     public float lowJumpMultiplier = 2f;
-    [Tooltip("Seconds after leaving a platform you can still jump.")]
     public float coyoteTime = 0.12f;
-    [Tooltip("Seconds before landing a jump input is buffered.")]
     public float jumpBufferTime = 0.15f;
-    [Tooltip("Maximum number of jumps (1 = single, 2 = double jump, etc).")]
     public int   maxJumps = 1;
 
     [Header("Ground Detection")]
-    [Tooltip("Transform at the character's feet.")]
     public Transform groundCheck;
-    [Tooltip("Radius of the overlap circle used to detect ground.")]
     public float groundCheckRadius = 0.15f;
-    [Tooltip("Layer(s) that count as ground.")]
     public LayerMask groundLayers;
 
     [Header("Ledge Climb")]
-    [Tooltip("Duration of the climb-up animation/tween in seconds.")]
     public float climbDuration = 0.25f;
     public float hangpointHorizontalOffset = 0.3f;
     public float hangpointVerticalOffset = 1.2f;
@@ -78,10 +40,14 @@ public class PlayerController : MonoBehaviour
     [Header("Stamina")]
     public StaminaResource stamina;
 
-    // ════════════════════════════════════════════════════════
-    // MOVE STATES
-    // ════════════════════════════════════════════════════════
+    //NetworkVariables
+    public readonly NetworkVariable<float> StaminaNetworked = new(
+    100f, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Owner);
+    public readonly NetworkVariable<float> FacingSignNetworked = new(
+    1f, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Owner);
 
+    
+    // Move STates
     public enum MoveState
     {
         Grounded,
@@ -92,20 +58,14 @@ public class PlayerController : MonoBehaviour
 
     private MoveState _state = MoveState.Airborne;
 
-    // ════════════════════════════════════════════════════════
-    // COMPONENTS
-    // ════════════════════════════════════════════════════════
-
+    // Components
     private Rigidbody2D         _rb;
     private PlayerInputHandler  _input;
     private LedgeDetector       _ledgeDetector;
     private Animator            _animator;   // optional
     private HealthComponent     _health;
 
-    // ════════════════════════════════════════════════════════
-    // RUNTIME STATE
-    // ════════════════════════════════════════════════════════
-
+    // Runtime State
     private bool  _isGrounded;
     private float _facingSign    = 1f;   // +1 = right, -1 = left
 
@@ -117,12 +77,15 @@ public class PlayerController : MonoBehaviour
 
     // Ledge
     private Vector3 _climbStart;
+    private Vector3 _confirmedLedgePoint; //confirmed by RPC
     private Vector3 _climbTarget;
     private float   _climbTimer;
 
-    // ════════════════════════════════════════════════════════
-    // LIFECYCLE
-    // ════════════════════════════════════════════════════════
+    // Moving platforms
+    private PlatformMover _currentPlatform;
+    private Vector2 _lastPlatformPosition;
+
+#region Lifecycle
 
     private void Awake()
     {
@@ -139,12 +102,49 @@ public class PlayerController : MonoBehaviour
         _health.OnRevived += OnRevived;
     }
 
-    private void Start()
+    public override void OnNetworkSpawn()
     {
         // Start is guaranteed to run after ALL Awake calls in the scene,
         // so PlayerRegistry.Instance is always valid here — even when both
         // players and the registry initialise in the same frame.
-        PlayerRegistry.Instance?.Register(this);
+        if (IsServer)
+        {
+            PlayerRegistry.Instance?.Register(this);
+            NetworkCameraController.Instance.SetTarget(transform); //follow latest player on Server
+        }        
+
+        if(IsOwner)
+        {
+            if(NetworkCameraController.Instance == null)
+            {
+                Debug.Log("CameraController null");
+            } 
+            else
+            {
+                NetworkCameraController.Instance.SetTarget(transform);
+
+                var bar = GetComponent<StaminaBar>();
+                if (bar != null)
+                {
+                    Debug.Log("[PlayerController] Bind Stamina Bar");
+                    bar.Bind(this);
+                }
+                    
+            }
+        }
+        
+        if(!IsOwner)
+        {
+            FacingSignNetworked.OnValueChanged += OnFacingChanged;
+            Debug.Log("[PlayerController] Hide non owner stam bar");
+            var bar = GetComponent<StaminaBar>();
+                if (bar != null) bar.staminaBar.SetActive(false);
+        } 
+    }
+
+    public override void OnNetworkDespawn()
+    {
+        FacingSignNetworked.OnValueChanged -= OnFacingChanged;
     }
 
     private void OnEnable()
@@ -153,23 +153,28 @@ public class PlayerController : MonoBehaviour
         // At that point the registry is already initialised, so Instance
         // is never null. The Contains check inside Register prevents duplicates
         // if OnEnable fires before Start on first boot.
+        if (!IsServer) return;
         PlayerRegistry.Instance?.Register(this);
     }
     
     private void OnDisable()
     {
+        if(!IsSpawned) return;
         PlayerRegistry.Instance?.Deregister(this);
     }
 
-    private void OnDestroy()
+    public override void OnDestroy()
     {
+        base.OnDestroy();
         _health.OnDied -= OnDied;
         _health.OnRevived -= OnRevived;
     }
 
     private void Update()
     {
-        // ── Buffer jump input ────────────────────────────────
+        if(!IsOwner) return;
+        
+        // Buffer jump input
         if (_input.JumpPressed)
         {
             _jumpBufferTimer = jumpBufferTime;
@@ -180,12 +185,15 @@ public class PlayerController : MonoBehaviour
         else
             _jumpQueued = false;
 
-        // ── Consume one-frame inputs ─────────────────────────
+        // Consume one-frame inputs
         _input.ConsumeFrameInputs();
+             
     }
 
     private void FixedUpdate()
     {
+        if(!IsOwner) return;
+        
         UpdateGroundState();
         _ledgeDetector.UpdateDetection(_facingSign);
 
@@ -199,12 +207,12 @@ public class PlayerController : MonoBehaviour
         }
 
         UpdateAnimator();
+        
     }
+#endregion
 
-    // ════════════════════════════════════════════════════════
-    // GROUND CHECK
-    // ════════════════════════════════════════════════════════
-
+#region Ground Check
+    
     private void UpdateGroundState()
     {
         bool wasGrounded = _isGrounded;
@@ -218,6 +226,8 @@ public class PlayerController : MonoBehaviour
             _coyoteTimer = coyoteTime;
         else if (_coyoteTimer > 0f)
             _coyoteTimer -= Time.fixedDeltaTime;
+
+        TrackPlatform();
     }
 
     private void OnLanded()
@@ -227,10 +237,54 @@ public class PlayerController : MonoBehaviour
             TransitionTo(MoveState.Grounded);
     }
 
-    // ════════════════════════════════════════════════════════
-    // STATE: GROUNDED
-    // ════════════════════════════════════════════════════════
+    private void TrackPlatform()
+    {
+        if (!_isGrounded)
+        {
+            _currentPlatform = null;
+            return;
+        }
 
+        // Cast downward from ground check to find whatever we're standing on
+        RaycastHit2D hit = Physics2D.Raycast(
+            groundCheck.position,
+            Vector2.down,
+            groundCheckRadius + 0.1f,
+            groundLayers);
+
+        if (hit.collider == null)
+        {
+            _currentPlatform = null;
+            return;
+        }
+
+        PlatformMover platform = hit.collider.GetComponentInParent<PlatformMover>();
+
+        if (platform == null)
+        {
+            _currentPlatform = null;
+            return;
+        }
+
+        if (platform != _currentPlatform)
+        {
+            // Just stepped onto a new platform, record its position
+            _currentPlatform = platform;
+            _lastPlatformPosition = platform.transform.position;
+        }
+        else
+        {
+            // Already on this platform, apply delta
+            Vector2 platformDelta = (Vector2)platform.transform.position - _lastPlatformPosition;
+            if (platformDelta != Vector2.zero)
+                _rb.position += platformDelta;
+
+            _lastPlatformPosition = platform.transform.position;
+        }
+    }
+#endregion
+    
+#region States
     private void TickGrounded()
     {
         if (!_isGrounded)
@@ -245,10 +299,6 @@ public class PlayerController : MonoBehaviour
             ExecuteJump();
     }
 
-    // ════════════════════════════════════════════════════════
-    // STATE: AIRBORNE
-    // ════════════════════════════════════════════════════════
-
     private void TickAirborne()
     {
         if (_isGrounded)
@@ -257,16 +307,17 @@ public class PlayerController : MonoBehaviour
             return;
         }
 
-        // ── Ledge grab ──────────────────────────────────────
+        // Ledge grab, with Network confirmation guard
         if (_ledgeDetector.LedgeDetected && _rb.linearVelocityY <= 0f)
         {
-            TransitionTo(MoveState.LedgeHang);
+            RequestLedgeGrabServerRpc(_ledgeDetector.LedgePoint, _ledgeDetector.ClimbTarget, _facingSign);
+            //TransitionTo(MoveState.LedgeHang);
             return;
         }
 
         ApplyHorizontalMovement();
 
-        // ── Variable jump gravity ────────────────────────────
+        // Variable jump gravity
         if (_rb.linearVelocityY < 0f)
         {
             _rb.linearVelocity += Vector2.up * Physics2D.gravity.y * (fallGravityMultiplier - 1f) * Time.fixedDeltaTime;
@@ -276,14 +327,10 @@ public class PlayerController : MonoBehaviour
             _rb.linearVelocity += Vector2.up * Physics2D.gravity.y * (lowJumpMultiplier - 1f) * Time.fixedDeltaTime;
         }
 
-        // ── Air jump (double jump etc.) ──────────────────────
+        // Air jump (double jump etc.)
         if (CanJump())
             ExecuteJump();
     }
-
-    // ════════════════════════════════════════════════════════
-    // STATE: LEDGE HANG
-    // ════════════════════════════════════════════════════════
 
     private void TickLedgeHang()
     {
@@ -293,11 +340,11 @@ public class PlayerController : MonoBehaviour
 
         // Snap position to hang point (hands at ledge)
         transform.position = new Vector3(
-            _ledgeDetector.LedgePoint.x - _facingSign * hangpointHorizontalOffset,
-            _ledgeDetector.LedgePoint.y - hangpointVerticalOffset,
+            _confirmedLedgePoint.x - _facingSign * hangpointHorizontalOffset,
+            _confirmedLedgePoint.y - hangpointVerticalOffset,
             transform.position.z);
 
-        // ── Let go downward ──────────────────────────────────
+        // Let go downward
         if (_input.MoveInput.y < -0.5f)
         {
             _rb.gravityScale = 1f;
@@ -305,20 +352,15 @@ public class PlayerController : MonoBehaviour
             return;
         }
 
-        // ── Climb up ─────────────────────────────────────────
+        // Climb up
         if (_jumpQueued || _input.ClimbPressed || _input.MoveInput.y > 0.5f)
         {
             _climbStart  = transform.position;
-            _climbTarget = _ledgeDetector.ClimbTarget;
             _climbTimer  = 0f;
             _jumpQueued  = false;
             TransitionTo(MoveState.LedgeClimb);
         }
     }
-
-    // ════════════════════════════════════════════════════════
-    // STATE: LEDGE CLIMB
-    // ════════════════════════════════════════════════════════
 
     private void TickLedgeClimb()
     {
@@ -337,11 +379,10 @@ public class PlayerController : MonoBehaviour
             TransitionTo(MoveState.Grounded);
         }
     }
-
-    // ════════════════════════════════════════════════════════
-    // SHARED MOVEMENT HELPERS
-    // ════════════════════════════════════════════════════════
-
+#endregion
+    
+#region Shared Movement Helpers
+    
     private void ApplyHorizontalMovement()
     {
         float inputX = _input.MoveInput.x;
@@ -350,12 +391,14 @@ public class PlayerController : MonoBehaviour
         if (inputX != 0f)
         {
             _facingSign = Mathf.Sign(inputX);
+            FacingSignNetworked.Value = _facingSign;
             transform.localScale = new Vector3(_facingSign, 1f, 1f);
         }
 
         // Resolve sprint
         bool wantsSprint  = _input.SprintHeld && Mathf.Abs(inputX) > 0.1f;
         bool isSprinting  = stamina.Tick(wantsSprint, Time.fixedDeltaTime);
+        StaminaNetworked.Value = stamina.Current; //sync in network
         float targetSpeed = inputX * walkSpeed * (isSprinting ? sprintMultiplier : 1f);
 
         // Smooth acceleration / deceleration
@@ -365,10 +408,13 @@ public class PlayerController : MonoBehaviour
         _rb.linearVelocity = new Vector2(newVelX, _rb.linearVelocityY);
     }
 
-    // ════════════════════════════════════════════════════════
-    // JUMP
-    // ════════════════════════════════════════════════════════
+    private void OnFacingChanged(float prev, float current)
+    {
+        _facingSign = current;
+        transform.localScale = new Vector3(current, 1f, 1f);
+    }
 
+    // Jump
     private bool CanJump()
     {
         if (!_jumpQueued) return false;
@@ -394,10 +440,7 @@ public class PlayerController : MonoBehaviour
             TransitionTo(MoveState.Airborne);
     }
 
-    // ════════════════════════════════════════════════════════
-    // STATE MACHINE
-    // ════════════════════════════════════════════════════════
-
+    // State Machine
     private void TransitionTo(MoveState next)
     {
         ExitState(_state);
@@ -433,11 +476,9 @@ public class PlayerController : MonoBehaviour
         if (s == MoveState.LedgeClimb || s == MoveState.LedgeHang)
             _rb.bodyType = RigidbodyType2D.Dynamic;
     }
+#endregion
 
-    // ════════════════════════════════════════════════════════
-    // DEATH
-    // ════════════════════════════════════════════════════════
-    
+    // Death
     private void OnDied()
     {
         if(_animator != null)
@@ -451,7 +492,7 @@ public class PlayerController : MonoBehaviour
     {
         // Reset the Animator back to its default state so the death
         // pose/hide doesn't persist. Rebind() resets all parameters and
-        // replays the default state from time 0 — safe even with no Animator.
+        // replays the default state from time 0.
         if (_animator != null)
         {
             _animator.ResetTrigger(AnimIsDead);
@@ -479,10 +520,7 @@ public class PlayerController : MonoBehaviour
         _state = MoveState.Airborne;
     }
     
-    // ════════════════════════════════════════════════════════
-    // ANIMATOR BRIDGE  (optional — safe if no Animator attached)
-    // Update with LedgeGrabbing, CLimbing animations later
-    // ════════════════════════════════════════════════════════
+    // Animator Bridge
 
     private static readonly int AnimSpeed     = Animator.StringToHash("AbsVelocityX");
     private static readonly int AnimGrounded  = Animator.StringToHash("IsGrounded");
@@ -504,13 +542,43 @@ public class PlayerController : MonoBehaviour
         //_animator.SetBool(AnimSprint,    _input.SprintHeld && !stamina.IsExhausted);
     }
 
-    // ════════════════════════════════════════════════════════
-    // PUBLIC ACCESSORS  (for UI, abilities, external systems)
-    // ════════════════════════════════════════════════════════
+    // Public accessors
 
     public float StaminaNormalized => stamina.Normalized;
     public bool  IsGrounded        => _isGrounded;
     public bool  IsLedgeHanging    => _state == MoveState.LedgeHang;
     public MoveState CurrentState  => _state;
     public float FacingSign        => _facingSign;
+
+    
+#region Network RPCS
+    
+    [ServerRpc]
+    private void RequestLedgeGrabServerRpc(Vector3 ledgePoint, Vector3 climbTarget, float facingSign)
+    {
+        Vector2 eyePos  = (Vector2)transform.position + Vector2.up * _ledgeDetector.wallRayHeight;
+        Vector2 dir     = Vector2.right * facingSign;
+        bool    wallHit = Physics2D.Raycast(eyePos, dir,
+                            _ledgeDetector.rayLength, _ledgeDetector.geometryLayers);
+
+        Vector2 ledgeEye = (Vector2)transform.position + Vector2.up * _ledgeDetector.ledgeRayHeight;
+        bool    ledgeHit = Physics2D.Raycast(ledgeEye, dir,
+                            _ledgeDetector.rayLength, _ledgeDetector.geometryLayers);
+
+        if (wallHit && !ledgeHit)
+            ConfirmLedgeGrabClientRpc(ledgePoint, climbTarget);
+    }
+
+    [ClientRpc]
+    private void ConfirmLedgeGrabClientRpc(Vector3 ledgePoint, Vector3 climbTarget)
+    {
+        if (!IsOwner) return;
+
+        // Cache the confirmed points so TickLedgeHang and TickLedgeClimb
+        // use the server-validated values rather than re-reading from the detector
+        _confirmedLedgePoint  = ledgePoint;
+        _climbTarget          = climbTarget;
+        TransitionTo(MoveState.LedgeHang);
+    }
+#endregion
 }

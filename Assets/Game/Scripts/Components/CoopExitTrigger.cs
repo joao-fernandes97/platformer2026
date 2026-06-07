@@ -3,54 +3,15 @@ using UnityEngine.Events;
 using System.Collections.Generic;
 
 /// <summary>
-/// Exit zone for a local co-op platformer.
-///
-/// ═══════════════════════════════════════════════════════════
-///  BEHAVIOUR
-/// ═══════════════════════════════════════════════════════════
-///  Place on any GameObject with a Collider2D (set to Is Trigger).
-///
-///  RequiredPlayersMode controls when the exit fires:
-///
-///   • Any        — the first player to enter triggers it immediately.
-///   • All        — every living player must be inside simultaneously.
-///   • Specific N — exactly N living players must be inside simultaneously.
-///
-///  While players are gathering but the threshold hasn't been met,
-///  an optional "waiting" prompt or indicator can be shown.
-///
-/// ═══════════════════════════════════════════════════════════
-///  SETUP
-/// ═══════════════════════════════════════════════════════════
-///  1. Add to a GameObject whose Collider2D covers the exit area.
-///  2. Choose RequiredPlayersMode in the Inspector.
-///  3. Wire OnExitTriggered to your scene-transition action
-///     (e.g. an OkapiKit action, SceneManager.LoadScene wrapper, etc.)
-///  4. Optionally wire OnWaiting / OnWaitingCancelled to a UI prompt
-///     that tells the other player to catch up.
-///
-/// ═══════════════════════════════════════════════════════════
-///  MULTIPLAYER MIGRATION (NGO server-auth)
-/// ═══════════════════════════════════════════════════════════
-///  1. Inherit NetworkBehaviour.
-///  2. Track players via NetworkObject IDs instead of Transform refs.
-///  3. Run the threshold check only on the server; broadcast the
-///     trigger via a ClientRpc so all clients play the transition.
+/// Level exit zone for co-op game.
 /// </summary>
 [RequireComponent(typeof(Collider2D))]
 public class CoopExitTrigger : MonoBehaviour
 {
-    // ════════════════════════════════════════════════════════
-    // INSPECTOR CONFIG
-    // ════════════════════════════════════════════════════════
-
     public enum RequiredPlayersMode
     {
-        /// <summary>Any single player entering fires the exit.</summary>
         Any,
-        /// <summary>All currently living players must be inside simultaneously.</summary>
         All,
-        /// <summary>A fixed number of players must be inside simultaneously.</summary>
         SpecificCount,
     }
 
@@ -81,11 +42,8 @@ public class CoopExitTrigger : MonoBehaviour
              "Use to hide the waiting prompt.")]
     public UnityEvent OnWaitingCancelled;
 
-    // ════════════════════════════════════════════════════════
     // RUNTIME STATE
-    // ════════════════════════════════════════════════════════
-
-    /// <summary>True after the exit has fired (when oneShot = true).</summary>
+    //True after the exit has fired (when oneShot = true).
     public bool HasFired { get; private set; }
 
     // One entry per PlayerController; value = number of that player's
@@ -94,20 +52,14 @@ public class CoopExitTrigger : MonoBehaviour
 
     private bool _wasWaiting;
 
-    // ════════════════════════════════════════════════════════
     // LIFECYCLE
-    // ════════════════════════════════════════════════════════
-
     private void Awake()
     {
         GetComponent<Collider2D>().isTrigger = true;
         SetWaitingIndicator(false);
     }
 
-    // ════════════════════════════════════════════════════════
-    // TRIGGER ZONE
-    // ════════════════════════════════════════════════════════
-
+#region Trigger zone
     private void OnTriggerEnter2D(Collider2D other)
     {
         var player = other.GetComponentInParent<PlayerController>();
@@ -137,11 +89,9 @@ public class CoopExitTrigger : MonoBehaviour
             _playersInZone[player] = remaining;
         }
     }
-
-    // ════════════════════════════════════════════════════════
-    // LOGIC
-    // ════════════════════════════════════════════════════════
-
+#endregion
+    
+#region Logic
     private void OnPlayerEntered()
     {
         if (HasFired) return;
@@ -216,11 +166,9 @@ public class CoopExitTrigger : MonoBehaviour
 
         OnExitTriggered?.Invoke();
     }
-
-    // ════════════════════════════════════════════════════════
-    // HELPERS
-    // ════════════════════════════════════════════════════════
-
+#endregion
+    
+#region Helpers
     private void SetWaitingIndicator(bool visible)
     {
         if (waitingIndicator != null)
@@ -238,10 +186,6 @@ public class CoopExitTrigger : MonoBehaviour
         _playersInZone.Clear();
         SetWaitingIndicator(false);
     }
-
-    // ════════════════════════════════════════════════════════
-    // GIZMOS
-    // ════════════════════════════════════════════════════════
 
     private void OnDrawGizmos()
     {
@@ -285,4 +229,5 @@ public class CoopExitTrigger : MonoBehaviour
         UnityEditor.Handles.Label(transform.position + Vector3.up * 0.5f, label);
 #endif
     }
+#endregion
 }
