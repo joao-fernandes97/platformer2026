@@ -14,7 +14,7 @@ This project started off as a split screen co-op game. That's when I built the l
 ## Technology Stack
 
 | Layer | Technology |
-|---|---|
+| --- | --- |
 | Engine | Unity (2D, Rigidbody2D physics) |
 | Networking | Unity Netcode for GameObjects (NGO) |
 | Transport | Unity Transport (UTP) with Unity Relay |
@@ -182,3 +182,10 @@ Available under the **Tools** menu:
 | Close All | Kills all running instances of the built executable |
 
 Based on the class project. Quite useful early on to get something working with direct connections. Once I was using Relay these lost some usefulness and I didn't bother creating new ones.
+
+## Bibliography / Resources used
+
+- <https://www.youtube.com/watch?v=3yuBOB3VrCk>
+- Class recordings
+- <https://docs.unity.com/en-us/mps-sdk>
+- Okapi Kit (for early iteration)
