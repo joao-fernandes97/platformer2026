@@ -168,7 +168,7 @@ sequenceDiagram
 
 ---
 
-## Editor Tools (`NetworkSetup` — `#if UNITY_EDITOR`)
+## Editor Tools
 
 Available under the **Tools** menu:
 
