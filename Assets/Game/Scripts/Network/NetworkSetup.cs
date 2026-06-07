@@ -124,7 +124,7 @@ public class NetworkSetup : MonoBehaviour
         var networkManager = GetComponent<NetworkManager>();
         if (networkManager.StartServer())
         {
-            SetWindowTitle("Coop Platformer - Server");
+            SetWindowTitle("MR:S - Server");
             Debug.Log("[NetworkSetup] Server listening.");
 
             networkManager.OnClientConnectedCallback  += OnClientConnected;
@@ -166,7 +166,7 @@ public class NetworkSetup : MonoBehaviour
         var networkManager = GetComponent<NetworkManager>();
         if (networkManager.StartClient())
         {
-            SetWindowTitle("Coop Platformer");
+            SetWindowTitle("Maze Runner: Survive");
             Debug.Log("[NetworkSetup] Client connecting...");
 
             networkManager.OnClientConnectedCallback  += OnLocalClientConnected;
@@ -463,8 +463,8 @@ public class NetworkSetup : MonoBehaviour
 #endif
 
 #if UNITY_EDITOR
-    private const string BuildPath = "Builds\\Maze Runner: Survive.exe";
-    private const string ExeName   = "Maze Runner: Survive";
+    private const string BuildPath = "Builds\\Maze Runner Survive.exe";
+    private const string ExeName   = "Maze Runner Survive";
 
     [MenuItem("Tools/Build Windows (x64)", priority = 0)]
     public static bool BuildGame()
